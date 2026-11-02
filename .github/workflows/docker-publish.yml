@@ -1,0 +1,171 @@
+name: docker-publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'Dockerfile.dockerignore'
+      - '.dockerignore'
+      - '.github/workflows/docker-publish.yml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'packages/python/pyproject.toml'
+      - 'packages/python/goldenmatch/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Normalize image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          IMAGE="ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: goldenmatch:smoke
+          cache-from: type=gha,scope=goldenmatch-${{ matrix.arch }}
+          cache-to: type=gha,scope=goldenmatch-${{ matrix.arch }},mode=max
+
+      - name: Smoke test image
+        env:
+          SMOKE_TOKEN: temporary-workflow-smoke-token
+        run: |
+          set -euo pipefail
+          image=goldenmatch:smoke
+          data_dir="$RUNNER_TEMP/goldenmatch-data"
+          mkdir -p "$data_dir"
+          chmod 777 "$data_dir"
+          printf 'id,name\n1,Smoke Test\n' > "$data_dir/data.csv"
+
+          missing_token_container=$(docker run -d --mount "type=bind,src=$data_dir,dst=/data" -p 127.0.0.1:5050:5050 "$image")
+          for attempt in {1..15}; do
+            running=$(docker inspect --format '{{.State.Running}}' "$missing_token_container")
+            [[ "$running" == false ]] && break
+            sleep 1
+          done
+          running=$(docker inspect --format '{{.State.Running}}' "$missing_token_container")
+          exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$missing_token_container")
+          docker rm "$missing_token_container" >/dev/null
+          if [[ "$running" != false || "$exit_code" == 0 ]]; then
+            echo 'Image did not fail startup when GOLDENMATCH_WEB_TOKEN was missing' >&2
+            exit 1
+          fi
+
+          container=$(docker run -d --mount "type=bind,src=$data_dir,dst=/data" -p 127.0.0.1:5050:5050 -e "GOLDENMATCH_WEB_TOKEN=$SMOKE_TOKEN" "$image")
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          ready=false
+          for attempt in {1..30}; do
+            if curl --silent --fail http://127.0.0.1:5050/ >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          [[ "$ready" == true ]]
+
+          html=$(curl --silent --show-error --fail http://127.0.0.1:5050/)
+          asset=$(printf '%s' "$html" | grep -oE '/assets/[^" ]+\.js' | head -n 1)
+          [[ -n "$asset" ]]
+          curl --silent --show-error --fail "http://127.0.0.1:5050$asset" >/dev/null
+
+          health=$(curl --silent --show-error --fail http://127.0.0.1:5050/api/v1/healthz)
+          jq -e '.status == "ok"' <<<"$health" >/dev/null
+
+          anonymous_status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:5050/api/v1/project)
+          [[ "$anonymous_status" == 401 ]]
+          authenticated=$(curl --silent --show-error --fail -H "Authorization: Bearer $SMOKE_TOKEN" http://127.0.0.1:5050/api/v1/project)
+          jq -e '.project_root == "/data"' <<<"$authenticated" >/dev/null
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push tested architecture image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker tag goldenmatch:smoke "$IMAGE:sha-$GITHUB_SHA-$ARCH"
+          docker push "$IMAGE:sha-$GITHUB_SHA-$ARCH"
+  publish-manifest:
+    needs: build-and-smoke
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-platform tags
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          IMAGE="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+          docker buildx imagetools create \
+            --tag "$IMAGE:latest" \
+            --tag "$IMAGE:sha-$GITHUB_SHA" \
+            "$IMAGE:sha-$GITHUB_SHA-amd64" \
+            "$IMAGE:sha-$GITHUB_SHA-arm64"
+
+      - name: Summarize published images
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          IMAGE="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo '### Published Docker images'
+            echo
+            echo "- \`$IMAGE:latest\`"
+            echo "- \`$IMAGE:sha-$GITHUB_SHA\`"
+            echo
+            echo 'Platforms: linux/amd64, linux/arm64'
+          } >> "$GITHUB_STEP_SUMMARY"

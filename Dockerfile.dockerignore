@@ -1,0 +1,27 @@
+# Scoped to the root WebUI Dockerfile; other images keep .dockerignore.
+**
+!Dockerfile
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!packages/
+!packages/python/
+!packages/python/goldenmatch/
+!packages/python/goldenmatch/pyproject.toml
+!packages/python/goldenmatch/README.md
+!packages/python/goldenmatch/LICENSE
+!packages/python/goldenmatch/goldenmatch/
+!packages/python/goldenmatch/goldenmatch/**
+!packages/python/goldenmatch/web/
+!packages/python/goldenmatch/web/frontend/
+!packages/python/goldenmatch/web/frontend/**
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+packages/python/goldenmatch/goldenmatch/web/static/**
+packages/python/goldenmatch/web/frontend/dist
+packages/python/goldenmatch/web/frontend/test-results
+packages/python/goldenmatch/web/frontend/playwright-report

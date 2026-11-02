@@ -1,4 +1,5 @@
 import type {
+  Pair,
   ClusterDetail,
   ClusterSummary,
   Project,
@@ -490,13 +491,69 @@ export type ControllerTelemetry = {
   negative_evidence: ControllerNegativeEvidence[];
 };
 
+let authToken: string | null = null;
+
+const authExpiredEvent = "goldenmatch:auth-expired";
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+
+export function clearAuthToken() {
+  authToken = null;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(authExpiredEvent));
+  }
+}
+
+export function hasAuthToken() {
+  return authToken !== null;
+}
+
+export function onAuthExpired(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(authExpiredEvent, callback);
+  return () => window.removeEventListener(authExpiredEvent, callback);
+}
+
+const apiFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const token = authToken;
+  let request: Promise<Response>;
+  if (token) {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    request = fetch(input, { ...init, headers });
+  } else {
+    request = init === undefined ? fetch(input) : fetch(input, init);
+  }
+  return request.then((response) => {
+    if (response.status === 401 && token !== null && authToken === token) {
+      authToken = null;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(authExpiredEvent));
+      }
+    }
+    return response;
+  });
+};
+
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 const json = async <T>(resp: Response): Promise<T> => {
-  if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+  if (!resp.ok) throw new ApiError(resp.status, `${resp.status} ${await resp.text()}`);
   return resp.json() as Promise<T>;
 };
 
 const post = <T>(path: string, body: unknown): Promise<T> =>
-  fetch(path, {
+  apiFetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -513,29 +570,29 @@ export type IngestReport = {
 export type IngestResult = { records: Record<string, unknown>[]; report: IngestReport };
 
 const postForm = <T>(path: string, form: FormData): Promise<T> =>
-  fetch(path, { method: "POST", body: form }).then((r) => json<T>(r));
+  apiFetch(path, { method: "POST", body: form }).then((r) => json<T>(r));
 
 export const api = {
   project: (): Promise<Project> =>
-    fetch("/api/v1/project")
+    apiFetch("/api/v1/project")
       .then((r) => json<Project>(r))
       .then(deserializeProject),
   run: (name: string): Promise<RunManifest> =>
-    fetch(`/api/v1/runs/${name}`).then((r) => json<RunManifest>(r)),
+    apiFetch(`/api/v1/runs/${name}`).then((r) => json<RunManifest>(r)),
   clusters: (name: string, cursor?: number): Promise<ClustersPage> =>
-    fetch(`/api/v1/runs/${name}/clusters?cursor=${cursor ?? 0}`).then((r) =>
+    apiFetch(`/api/v1/runs/${name}/clusters?cursor=${cursor ?? 0}`).then((r) =>
       json<ClustersPage>(r),
     ),
   cluster: (name: string, id: number): Promise<ClusterDetail> =>
-    fetch(`/api/v1/runs/${name}/clusters/${id}`).then((r) =>
+    apiFetch(`/api/v1/runs/${name}/clusters/${id}`).then((r) =>
       json<ClusterDetail>(r),
     ),
   rules: (): Promise<RulesPayload> =>
-    fetch("/api/v1/rules")
+    apiFetch("/api/v1/rules")
       .then((r) => json<RulesPayload>(r))
       .then(deserializeRules),
   putRules: (body: RulesPayload): Promise<RulesPayload> =>
-    fetch("/api/v1/rules", {
+    apiFetch("/api/v1/rules", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(serializeRules(body)),
@@ -543,7 +600,7 @@ export const api = {
       .then((r) => json<RulesPayload>(r))
       .then(deserializeRules),
   saveRules: (): Promise<SaveRulesResponse> =>
-    fetch("/api/v1/rules/save", { method: "POST" }).then((r) =>
+    apiFetch("/api/v1/rules/save", { method: "POST" }).then((r) =>
       json<SaveRulesResponse>(r),
     ),
   preview: (body: {
@@ -561,11 +618,11 @@ export const api = {
     note?: string;
   }): Promise<LabelRecord> => post<LabelRecord>("/api/v1/labels", body),
   runLabels: (name: string): Promise<RunLabelRecord[]> =>
-    fetch(`/api/v1/runs/${name}/labels`).then((r) =>
+    apiFetch(`/api/v1/runs/${name}/labels`).then((r) =>
       json<RunLabelRecord[]>(r),
     ),
   runEvaluation: (name: string): Promise<EvaluationResponse> =>
-    fetch(`/api/v1/runs/${name}/evaluation`).then((r) =>
+    apiFetch(`/api/v1/runs/${name}/evaluation`).then((r) =>
       json<EvaluationResponse>(r),
     ),
   unmerge: (
@@ -576,35 +633,35 @@ export const api = {
   runReview: (
     name: string,
     opts?: { lo?: number; hi?: number; includeLabeled?: boolean; limit?: number },
-  ): Promise<import("./types").Pair[]> => {
+  ): Promise<Pair[]> => {
     const params = new URLSearchParams();
     if (opts?.lo != null) params.set("lo", String(opts.lo));
     if (opts?.hi != null) params.set("hi", String(opts.hi));
     if (opts?.includeLabeled) params.set("include_labeled", "true");
     if (opts?.limit != null) params.set("limit", String(opts.limit));
     const qs = params.toString();
-    return fetch(
+    return apiFetch(
       `/api/v1/runs/${name}/review${qs ? `?${qs}` : ""}`,
-    ).then((r) => json<import("./types").Pair[]>(r));
+    ).then((r) => json<Pair[]>(r));
   },
   autoconfig: (domain?: string): Promise<RulesPayload> => {
     const qs = domain ? `?domain=${encodeURIComponent(domain)}` : "";
-    return fetch(`/api/v1/autoconfig${qs}`, { method: "POST" })
+    return apiFetch(`/api/v1/autoconfig${qs}`, { method: "POST" })
       .then((r) => json<RulesPayload>(r))
       .then(deserializeRules);
   },
   domains: (): Promise<DomainPack[]> =>
-    fetch("/api/v1/domains").then((r) => json<DomainPack[]>(r)),
+    apiFetch("/api/v1/domains").then((r) => json<DomainPack[]>(r)),
   quality: (): Promise<QualityResponse> =>
-    fetch("/api/v1/quality").then((r) => json<QualityResponse>(r)),
+    apiFetch("/api/v1/quality").then((r) => json<QualityResponse>(r)),
   memoryCorrections: (limit = 200): Promise<CorrectionsResponse> =>
-    fetch(`/api/v1/memory/corrections?limit=${limit}`).then((r) =>
+    apiFetch(`/api/v1/memory/corrections?limit=${limit}`).then((r) =>
       json<CorrectionsResponse>(r),
     ),
   memoryStatsApi: (): Promise<MemoryStatsResponse> =>
-    fetch("/api/v1/memory/stats").then((r) => json<MemoryStatsResponse>(r)),
+    apiFetch("/api/v1/memory/stats").then((r) => json<MemoryStatsResponse>(r)),
   memoryLearn: (): Promise<LearnResponse> =>
-    fetch("/api/v1/memory/learn", { method: "POST" }).then((r) =>
+    apiFetch("/api/v1/memory/learn", { method: "POST" }).then((r) =>
       json<LearnResponse>(r),
     ),
   match: (body: {
@@ -624,7 +681,7 @@ export const api = {
     return post<RunResponse>("/api/v1/run", payload);
   },
   settings: (): Promise<SettingsResponse> =>
-    fetch("/api/v1/settings").then((r) => json<SettingsResponse>(r)),
+    apiFetch("/api/v1/settings").then((r) => json<SettingsResponse>(r)),
   compare: (run_a: string, run_b: string): Promise<CompareResponse> =>
     post<CompareResponse>("/api/v1/compare", { run_a, run_b }),
   sensitivity: (body: {
@@ -636,7 +693,7 @@ export const api = {
     rules?: RulesPayload;
   }): Promise<SensitivityResponse> => post<SensitivityResponse>("/api/v1/sensitivity", body),
   controllerTelemetry: (): Promise<ControllerTelemetry> =>
-    fetch("/api/v1/controller/telemetry").then((r) =>
+    apiFetch("/api/v1/controller/telemetry").then((r) =>
       json<ControllerTelemetry>(r),
     ),
   // ── Identity Graph ────────────────────────────────────────────────────
@@ -652,31 +709,31 @@ export const api = {
     if (params.limit != null) qs.set("limit", String(params.limit));
     if (params.offset != null) qs.set("offset", String(params.offset));
     const q = qs.toString();
-    return fetch(`/api/v1/identities${q ? "?" + q : ""}`).then((r) =>
+    return apiFetch(`/api/v1/identities${q ? "?" + q : ""}`).then((r) =>
       json<IdentityListResponse>(r),
     );
   },
   identityStats: (dataset?: string): Promise<IdentityStatsResponse> => {
     const qs = dataset ? `?dataset=${encodeURIComponent(dataset)}` : "";
-    return fetch(`/api/v1/identities/stats${qs}`).then((r) =>
+    return apiFetch(`/api/v1/identities/stats${qs}`).then((r) =>
       json<IdentityStatsResponse>(r),
     );
   },
   identityGet: (entityId: string): Promise<IdentityView> =>
-    fetch(`/api/v1/identities/${encodeURIComponent(entityId)}`).then((r) =>
+    apiFetch(`/api/v1/identities/${encodeURIComponent(entityId)}`).then((r) =>
       json<IdentityView>(r),
     ),
   identity360: (entityId: string): Promise<Customer360Page> =>
-    fetch(`/api/v1/identities/${encodeURIComponent(entityId)}/360`).then((r) =>
+    apiFetch(`/api/v1/identities/${encodeURIComponent(entityId)}/360`).then((r) =>
       json<Customer360Page>(r),
     ),
   identityHistory: (entityId: string, limit = 100): Promise<{ items: IdentityEvent[] }> =>
-    fetch(`/api/v1/identities/${encodeURIComponent(entityId)}/history?limit=${limit}`).then((r) =>
+    apiFetch(`/api/v1/identities/${encodeURIComponent(entityId)}/history?limit=${limit}`).then((r) =>
       json<{ items: IdentityEvent[] }>(r),
     ),
   identityConflicts: (dataset?: string): Promise<{ items: IdentityEvidenceEdge[] }> => {
     const qs = dataset ? `?dataset=${encodeURIComponent(dataset)}` : "";
-    return fetch(`/api/v1/identities/conflicts${qs}`).then((r) =>
+    return apiFetch(`/api/v1/identities/conflicts${qs}`).then((r) =>
       json<{ items: IdentityEvidenceEdge[] }>(r),
     );
   },
@@ -692,7 +749,7 @@ export const api = {
     post(`/api/v1/identities/${encodeURIComponent(entityId)}/split`, body),
 
   putSettings: (body: WebSettings): Promise<SettingsResponse> =>
-    fetch("/api/v1/settings", {
+    apiFetch("/api/v1/settings", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -711,3 +768,4 @@ export const api = {
     return postForm("/api/v1/documents/ingest", form);
   },
 };
+
