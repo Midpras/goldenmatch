@@ -18,7 +18,7 @@ COPY packages/python/goldenmatch/pyproject.toml packages/python/goldenmatch/READ
 COPY packages/python/goldenmatch/goldenmatch/ goldenmatch/
 COPY --from=frontend /src/packages/python/goldenmatch/web/frontend/dist/ goldenmatch/web/static/
 RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: '.[web,polars]'
+    && /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: '.[web,polars,web-data]'
 
 FROM python:3.12-slim-bookworm AS runtime
 ENV PATH="/opt/venv/bin:$PATH" \
@@ -36,8 +36,8 @@ RUN apt-get update \
 USER root
 WORKDIR /data
 EXPOSE 5050
-# Project readiness intentionally reports 503 until /data/data.csv exists. Probe
-# the public page shell for liveness so a new, empty project can still be opened.
+# Project readiness reports 503 until legacy data or an imported snapshot exists.
+# Probe the public shell so a new, empty workspace can open its first import.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/', timeout=3)"
 # Coolify bind mounts may be root-owned. Fix only the mount root, then run the

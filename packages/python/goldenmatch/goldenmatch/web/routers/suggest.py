@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from goldenmatch._polars_lazy import pl
+from goldenmatch.web.datasets import request_dataset_state
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def _execute_suggest(project_root: Path, rules) -> dict[str, Any]:
 
 @router.get("/suggest")
 async def suggest(request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     loop = asyncio.get_running_loop()
     try:
         return await asyncio.wait_for(

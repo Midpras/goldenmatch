@@ -21,7 +21,7 @@ class RunManifest:
     total_pairs: int
     cluster_count: int
     row_count: int
-
+    dataset_id: str | None = None
 
 def discover_runs(project_dir: Path) -> list[RunRef]:
     """Return runs sorted newest first by lineage filename."""
@@ -52,6 +52,7 @@ def load_run_manifest(ref: RunRef) -> RunManifest:
     return RunManifest(
         run_name=ref.run_name,
         generated_at=lineage.get("generated_at", ""),
+        dataset_id=lineage.get("dataset_id", "legacy"),
         total_pairs=int(lineage.get("total_pairs", 0)),
         cluster_count=int(_to_frame(df).column("cluster_id").n_unique()),
         row_count=int(_to_frame(df).height),

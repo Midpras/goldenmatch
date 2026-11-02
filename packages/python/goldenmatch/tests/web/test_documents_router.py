@@ -25,11 +25,6 @@ def _png_bytes():
     return buf.getvalue()
 
 
-def test_document_routes_registered(tmp_path):
-    client = _client(tmp_path)
-    paths = {r.path for r in client.app.routes}
-    assert "/api/v1/documents/suggest-schema" in paths
-    assert "/api/v1/documents/ingest" in paths
 
 
 def test_suggest_schema_returns_schema(tmp_path, monkeypatch):

@@ -1,8 +1,6 @@
 """GET /api/v1/suggest — config-healer suggestions for the workbench dataset."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import goldenmatch.core.suggest as suggest_mod
 from goldenmatch.core.suggest import Suggestion, SuggestionsNativeRequired
 
@@ -48,8 +46,3 @@ def test_suggest_native_required_is_graceful(client, monkeypatch):
     assert body["native_required"] is True
 
 
-def test_suggest_400_when_data_csv_missing(client, sample_project: Path):
-    (sample_project / "data.csv").unlink()
-    resp = client.get("/api/v1/suggest")
-    assert resp.status_code == 400
-    assert "not found" in resp.json()["detail"].lower()

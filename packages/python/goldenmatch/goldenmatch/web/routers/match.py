@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from goldenmatch._polars_lazy import pl
 from goldenmatch.config.schemas import GoldenMatchConfig, RulesPayload
 from goldenmatch.core.pipeline import run_match_df
+from goldenmatch.web.datasets import dataset_root, request_dataset_state, workspace
 
 router = APIRouter(prefix="/api/v1")
 
@@ -37,8 +38,8 @@ _executor = ThreadPoolExecutor(max_workers=1)
 
 class MatchRequest(BaseModel):
     reference_path: str = Field(
-        ...,
-        description="Reference CSV path relative to project_root.",
+        "",
+        description="Reference CSV path relative to project_root when reference_dataset_id is absent.",
     )
     target_path: str = Field(
         "data.csv",
@@ -46,6 +47,7 @@ class MatchRequest(BaseModel):
     )
     auto_config: bool = False
     rules: RulesPayload | None = None
+    reference_dataset_id: str | None = None
 
 
 def _safe_resolve(project_root: Path, rel: str) -> Path:
@@ -71,13 +73,15 @@ def _safe_resolve(project_root: Path, rel: str) -> Path:
 def _execute_match(
     *,
     project_root: Path,
+    reference_project_root: Path,
     target_path: str,
     reference_path: str,
+    reference_dataset_path: Path | None,
     auto_config: bool,
     rules: RulesPayload | None,
 ) -> dict[str, Any]:
     target_full = _safe_resolve(project_root, target_path)
-    ref_full = _safe_resolve(project_root, reference_path)
+    ref_full = reference_dataset_path if reference_dataset_path is not None else _safe_resolve(reference_project_root, reference_path)
 
     target_df = pl.read_csv(target_full)
     ref_df = pl.read_csv(ref_full)
@@ -136,13 +140,14 @@ def _execute_match(
 
 @router.post("/match")
 async def match_run(payload: MatchRequest, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     rules = payload.rules or state.rules
     if not payload.auto_config and rules is None:
         raise HTTPException(
             status_code=400,
             detail="no rules to match with — pass `rules`, set auto_config=true, or edit rules in the workbench first.",
         )
+    reference_root = dataset_root(Path(request.app.state.app_state.project_root).resolve(), payload.reference_dataset_id) if payload.reference_dataset_id else None
 
     loop = asyncio.get_running_loop()
     try:
@@ -151,8 +156,10 @@ async def match_run(payload: MatchRequest, request: Request) -> dict:
                 _executor,
                 lambda: _execute_match(
                     project_root=state.project_root,
+                    reference_project_root=workspace(request),
                     target_path=payload.target_path,
                     reference_path=payload.reference_path,
+                    reference_dataset_path=reference_root / "data.csv" if reference_root else None,
                     auto_config=payload.auto_config,
                     rules=None if payload.auto_config else rules,
                 ),

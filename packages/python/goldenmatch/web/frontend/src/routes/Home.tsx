@@ -46,7 +46,7 @@ export function Home() {
   if (error)
     return (
       <div className="p-12 text-sm text-red-700">
-        Failed to load: {String(error)}
+        Failed to load project: {String(error)}. <Link to="/data" className="underline text-gold-600">Import or choose a dataset</Link>.
       </div>
     );
   if (!data) return null;
@@ -239,9 +239,9 @@ function ProvenanceCallout() {
 }
 
 function QualityBanner({ data }: { data: QualityResponse }) {
+  const [open, setOpen] = useState(false);
   if (!data.available) return null; // GoldenCheck not installed — silent
   const { errors, warnings, total } = data.summary;
-  const [open, setOpen] = useState(false);
 
   if (data.error) {
     return (

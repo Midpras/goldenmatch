@@ -4,6 +4,7 @@ export type RunManifest = {
   total_pairs: number;
   cluster_count: number;
   row_count: number;
+  dataset_id?: string;
 };
 
 export type MatchkeyType = "exact" | "weighted" | "probabilistic";
@@ -122,6 +123,7 @@ export type Project = {
   config_path: string | null;
   rules: RulesPayload;
   runs: RunManifest[];
+  dataset_id?: string;
 };
 
 export type ClusterSummary = {

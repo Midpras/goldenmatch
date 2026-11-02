@@ -5,6 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from goldenmatch.web import runs as runs_mod
+from goldenmatch.web.datasets import label_path_for_run, request_dataset_state
 from goldenmatch.web.labels import read_labels_dedup
 from goldenmatch.web.pair_prose import enrich_pairs, with_prose
 
@@ -26,7 +27,7 @@ def _find_run(state, run_name: str):
 
 @router.get("/{run_name}")
 def manifest(run_name: str, request: Request):
-    ref = _find_run(request.app.state.app_state, run_name)
+    ref = _find_run(request_dataset_state(request), run_name)
     return asdict(runs_mod.load_run_manifest(ref))
 
 
@@ -42,7 +43,7 @@ def clusters(
     Returns ``{items, cursor, total}``. Pass ``cursor`` from the previous response
     to fetch the next page; ``cursor=null`` indicates the end of the list.
     """
-    ref = _find_run(request.app.state.app_state, run_name)
+    ref = _find_run(request_dataset_state(request), run_name)
     summaries = runs_mod.cluster_summaries(ref)
     start = cursor or 0
     page = summaries[start : start + limit]
@@ -52,7 +53,7 @@ def clusters(
 
 @router.get("/{run_name}/clusters/{cluster_id}")
 def detail(run_name: str, cluster_id: int, request: Request):
-    ref = _find_run(request.app.state.app_state, run_name)
+    ref = _find_run(request_dataset_state(request), run_name)
     try:
         detail = runs_mod.cluster_detail(ref, cluster_id)
     except KeyError:
@@ -63,7 +64,7 @@ def detail(run_name: str, cluster_id: int, request: Request):
 
 @router.get("/{run_name}/rows/{row_id}")
 def row(run_name: str, row_id: int, request: Request):
-    ref = _find_run(request.app.state.app_state, run_name)
+    ref = _find_run(request_dataset_state(request), run_name)
     try:
         return runs_mod.source_row(ref, row_id)
     except IndexError:
@@ -83,20 +84,19 @@ def run_review(
 
     Surfaces pairs in the score band ``[lo, hi]`` so the user can triage
     potential matches one at a time. By default excludes pairs already in
-    ``labels.jsonl`` so reload picks up where you left off; pass
-    ``include_labeled=true`` to revisit decisions.
-
+    the run's applicable label store so reload picks up where the user left
+    off; pass ``include_labeled=true`` to revisit decisions.
     Each row carries the full lineage pair record (with field-level
     breakdown) so the UI can render the same diff view used in the cluster
     drilldown — just streamed as a worklist rather than nested under clusters.
     """
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     ref = _find_run(state, run_name)
     lineage = runs_mod.load_lineage(ref)
 
     labeled_keys: set[tuple[int, int]] = set()
     if not include_labeled:
-        for label in read_labels_dedup(state.labels_path):
+        for label in read_labels_dedup(label_path_for_run(state, run_name)):
             a, b = int(label["row_id_a"]), int(label["row_id_b"])
             labeled_keys.add((a, b) if a <= b else (b, a))
 
@@ -119,14 +119,13 @@ def run_review(
 
 @router.get("/{run_name}/labels")
 def run_labels(run_name: str, request: Request) -> list[dict]:
-    """Labels scoped to pairs that appear in this run's lineage.
+    """Return labels for pairs in this run's lineage.
 
-    Labels themselves are dataset-level (keyed by canonical pair, not run).
-    This endpoint just intersects the global labels store with this run's
-    pair set so the inspector can show "what have I labeled in THIS run".
+    Full-data runs share the dataset label store. Preview runs use their own
+    registry-owned temporary label store to avoid sampled row-ID collisions.
     Each record carries the pair's cluster_id so the UI can navigate.
     """
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     ref = _find_run(state, run_name)
     pair_to_cluster: dict[tuple[int, int], int] = {}
     lineage = runs_mod.load_lineage(ref)
@@ -136,7 +135,7 @@ def run_labels(run_name: str, request: Request) -> list[dict]:
         pair_to_cluster[key] = int(p["cluster_id"])
 
     out: list[dict] = []
-    for label in read_labels_dedup(state.labels_path):
+    for label in read_labels_dedup(label_path_for_run(state, run_name)):
         a, b = int(label["row_id_a"]), int(label["row_id_b"])
         key = (a, b) if a <= b else (b, a)
         cid = pair_to_cluster.get(key)

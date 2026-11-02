@@ -92,29 +92,31 @@ export default function App() {
   const [signInError, setSignInError] = useState<string | null>(null);
   const lastToken = useRef<string | null>(null);
 
+  const projectError = useCallback((error: unknown, submittedToken: string | null) => {
+    if (error instanceof ApiError && error.status === 401) {
+      lastToken.current = null;
+      setAuthToken(null);
+      setGateState("sign-in");
+      setSignInError(submittedToken ? "That access token was not accepted." : null);
+      return;
+    }
+    setGateState("error");
+    setSignInError(
+      error instanceof Error
+        ? `Could not reach GoldenMatch: ${error.message}`
+        : "Could not reach GoldenMatch. Check the server connection and try again.",
+    );
+  }, []);
+
   const verifyProject = useCallback(async (submittedToken: string | null) => {
-    setGateState("checking");
-    setSignInError(null);
     setAuthToken(submittedToken);
     try {
-      await api.project();
+      await api.datasets();
       setGateState("ready");
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        lastToken.current = null;
-        setAuthToken(null);
-        setGateState("sign-in");
-        setSignInError(submittedToken ? "That access token was not accepted." : null);
-        return;
-      }
-      setGateState("error");
-      setSignInError(
-        error instanceof Error
-          ? `Could not reach the project: ${error.message}`
-          : "Could not reach the project. Check the server connection and try again.",
-      );
+      projectError(error, submittedToken);
     }
-  }, []);
+  }, [projectError]);
 
   useEffect(() => {
     const unsubscribe = onAuthExpired(() => {
@@ -123,19 +125,27 @@ export default function App() {
       setSignInError("Your session is no longer authorized. Sign in again.");
       setGateState("sign-in");
     });
-    void verifyProject(null);
+    // Probe asynchronously so an empty workspace can reach its first import.
+    void api.datasets().then(
+      () => setGateState("ready"),
+      (error: unknown) => projectError(error, null),
+    );
     return unsubscribe;
-  }, [verifyProject]);
+  }, [projectError]);
 
   const signIn = useCallback(
     async (token: string) => {
       lastToken.current = token;
+      setSignInError(null);
+      setGateState("checking");
       await verifyProject(token);
     },
     [verifyProject],
   );
 
   const retryConnection = useCallback(() => {
+    setSignInError(null);
+    setGateState("checking");
     void verifyProject(lastToken.current);
   }, [verifyProject]);
   if (gateState === "checking") {

@@ -7,6 +7,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 
 from goldenmatch.config.schemas import RulesPayload
+from goldenmatch.web.datasets import request_dataset_state
 from goldenmatch.web.rules import load_rules_from_yaml
 
 router = APIRouter(prefix="/api/v1/rules")
@@ -21,7 +22,7 @@ def _seeded_rules(state) -> RulesPayload:
 
 @router.get("")
 def get_rules(request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     if state.rules is None:
         state.rules = _seeded_rules(state)
     return state.rules.model_dump()
@@ -29,14 +30,14 @@ def get_rules(request: Request) -> dict:
 
 @router.put("")
 def put_rules(payload: RulesPayload, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     state.rules = payload
     return state.rules.model_dump()
 
 
 @router.post("/save")
 def save_rules(request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     if state.rules is None:
         raise HTTPException(status_code=400, detail="no rules in memory; PUT first")
     if state.config_path is None:

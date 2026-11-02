@@ -2,11 +2,11 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  Link,
-  Outlet,
 } from "@tanstack/react-router";
-import { clearAuthToken, hasAuthToken } from "./lib/api";
+import { RootLayout } from "./components/RootLayout";
 import { Compare } from "./routes/Compare";
+import { Connections } from "./routes/Connections";
+import { Data } from "./routes/Data";
 import { Documents } from "./routes/Documents";
 import { Home } from "./routes/Home";
 import { Inspector } from "./routes/Inspector";
@@ -17,65 +17,7 @@ import { Sensitivity } from "./routes/Sensitivity";
 import { Settings } from "./routes/Settings";
 import { Workbench } from "./routes/Workbench";
 
-const rootRoute = createRootRoute({
-  component: () => (
-    <div className="min-h-screen flex flex-col">
-      {/* top frame strip — echoes the social-preview wordmark frame */}
-      <div aria-hidden className="h-[2px] frame-strip" />
-
-      <header className="px-8 py-5 flex items-end gap-8 border-b border-ink-200">
-        <Link to="/" className="group flex items-baseline gap-3 select-none">
-          <span className="display text-3xl text-gold-500 leading-none group-hover:text-gold-600 transition-colors">
-            GoldenMatch
-          </span>
-          <span className="eyebrow text-ink-400 group-hover:text-ink-500 transition-colors">
-            entity resolution&nbsp;·&nbsp;workbench
-          </span>
-        </Link>
-
-        <nav className="ml-auto flex items-center gap-1 text-[12px]">
-          <NavLink to="/">Project</NavLink>
-          <NavLink to="/workbench">Workbench</NavLink>
-          <NavLink to="/match">Match</NavLink>
-          <NavLink to="/documents">Ingest</NavLink>
-          <NavLink to="/compare">Compare</NavLink>
-          <NavLink to="/sensitivity">Sensitivity</NavLink>
-          <NavLink to="/identities">Identities</NavLink>
-          <NavLink to="/memory">Memory</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
-          {hasAuthToken() && (
-            <button
-              type="button"
-              onClick={clearAuthToken}
-              className="ml-2 border-l border-ink-200 px-3 py-2 uppercase tracking-eyebrow text-ink-500 hover:text-gold-600 transition-colors"
-            >
-              Sign out
-            </button>
-          )}
-        </nav>
-      </header>
-
-      <main className="flex-1 min-h-0">
-        <Outlet />
-      </main>
-
-      <div aria-hidden className="h-[2px] frame-strip" />
-    </div>
-  ),
-});
-
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
-  return (
-    <Link
-      to={to}
-      className="px-3 py-2 uppercase tracking-eyebrow text-ink-500 hover:text-gold-600 transition-colors"
-      activeProps={{ className: "text-gold-500" }}
-    >
-      {children}
-    </Link>
-  );
-}
-
+const rootRoute = createRootRoute({ component: RootLayout });
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -135,6 +77,18 @@ const identitiesRoute = createRoute({
   path: "/identities",
   component: Identities,
 });
+const dataRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/data",
+  component: Data,
+});
+
+const connectionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/connections",
+  component: Connections,
+});
+
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -143,6 +97,8 @@ const routeTree = rootRoute.addChildren([
   compareRoute,
   sensitivityRoute,
   matchRoute,
+  dataRoute,
+  connectionsRoute,
   memoryRoute,
   identitiesRoute,
   documentsRoute,

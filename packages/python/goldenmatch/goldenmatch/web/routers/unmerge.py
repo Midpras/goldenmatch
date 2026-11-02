@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 from goldenmatch.core.cluster import unmerge_cluster, unmerge_record
 from goldenmatch.web import runs as runs_mod
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1/runs")
 
@@ -137,6 +138,7 @@ def _write_back(ref, clusters: dict[int, dict], project_root: Path) -> None:
 def _record_steward_corrections(
     pairs: list[tuple[int, int]],
     project_root: Path,
+    dataset_id: str,
     decision: str = "reject",
 ) -> None:
     """Mirror unmerge to MemoryStore so the next run honors the split."""
@@ -149,7 +151,8 @@ def _record_steward_corrections(
                 decision=decision,
                 source="steward",
                 reason="web UI unmerge",
-                dataset=str(project_root),
+                dataset=dataset_id,
+                path=str(project_root / ".goldenmatch" / "memory.db"),
             )
     except Exception:
         # Don't fail the HTTP write — labels.jsonl + the file mutation
@@ -159,7 +162,7 @@ def _record_steward_corrections(
 
 @router.post("/{run_name}/unmerge")
 def post_unmerge(run_name: str, payload: UnmergeRequest, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     ref = _find_run(state, run_name)
     clusters = _reconstruct_clusters(ref)
 
@@ -211,7 +214,8 @@ def post_unmerge(run_name: str, payload: UnmergeRequest, request: Request) -> di
         clusters = unmerge_cluster(payload.cluster_id, clusters)
 
     _write_back(ref, clusters, state.project_root)
-    _record_steward_corrections(pairs_to_reject, state.project_root)
+    if not run_name.startswith("preview-"):
+        _record_steward_corrections(pairs_to_reject, state.project_root, state.memory_dataset)
 
     return {
         "run_name": run_name,

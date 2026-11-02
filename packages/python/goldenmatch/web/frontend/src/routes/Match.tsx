@@ -1,88 +1,66 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { api, getActiveDatasetId } from "../lib/api";
 import type { MatchResponse, MatchedRow, UnmatchedRow } from "../lib/api";
 
 export function Match() {
+  const activeDatasetId = getActiveDatasetId();
+  const datasets = useQuery({ queryKey: ["datasets"], queryFn: api.datasets });
+  const activeDataset = datasets.data?.items.find((item) => item.id === activeDatasetId);
   const [target, setTarget] = useState<string>("data.csv");
   const [reference, setReference] = useState<string>("reference.csv");
+  const [referenceDatasetId, setReferenceDatasetId] = useState("");
   const [autoConfig, setAutoConfig] = useState<boolean>(false);
 
   const matchMut = useMutation<MatchResponse, Error, void>({
-    mutationFn: () =>
-      api.match({
-        target_path: target,
-        reference_path: reference,
-        auto_config: autoConfig,
-      }),
+    mutationFn: () => api.match({
+      ...(activeDatasetId ? {} : { target_path: target }),
+      ...(referenceDatasetId
+        ? { reference_dataset_id: referenceDatasetId }
+        : { reference_path: reference }),
+      auto_config: autoConfig,
+    }),
   });
 
   const result = matchMut.data;
-
   return (
     <div className="px-8 py-10 max-w-6xl mx-auto">
       <header className="mb-8">
         <p className="eyebrow mb-2">match</p>
         <h1 className="display text-3xl text-ink-900">Target × reference</h1>
-        <p className="mt-2 text-sm text-ink-500 max-w-2xl">
-          One-to-many match: every target row gets its best reference match
-          above the workbench's threshold. Different output shape from dedupe —
-          there are no clusters, just a flat target → reference mapping.
-        </p>
+        <p className="mt-2 text-sm text-ink-500 max-w-2xl">One-to-many match: every target row gets its best reference match above the workbench&apos;s threshold. The active dataset is the target.</p>
       </header>
 
       <section className="card px-5 py-4 mb-8">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-          <label className="block">
-            <span className="eyebrow block mb-1">target path</span>
-            <input
-              type="text"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder="data.csv"
-              className="w-full font-mono text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="eyebrow block mb-1">reference path</span>
-            <input
-              type="text"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="reference.csv"
-              className="w-full font-mono text-sm"
-            />
-          </label>
-          <button
-            className="btn btn-primary"
-            disabled={!reference || matchMut.isPending}
-            onClick={() => matchMut.mutate()}
-          >
+          <div>
+            <span className="eyebrow block mb-1">target dataset</span>
+            {activeDatasetId
+              ? <p className="py-2 text-sm text-ink-800">{activeDataset?.name ?? `Unavailable dataset (${activeDatasetId})`}</p>
+              : <input type="text" value={target} disabled={matchMut.isPending} onChange={(e) => { setTarget(e.target.value); matchMut.reset(); }} placeholder="data.csv" className="w-full font-mono text-sm" aria-label="Target path" />}
+          </div>
+          <div>
+            <label className="block">
+              <span className="eyebrow block mb-1">reference source</span>
+              <select className="w-full" value={referenceDatasetId} disabled={matchMut.isPending} onChange={(e) => { setReferenceDatasetId(e.target.value); matchMut.reset(); }}>
+                <option value="">Project-relative file path</option>
+                {datasets.data?.items.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name} · {dataset.row_count ?? "?"} rows</option>)}
+              </select>
+            </label>
+            {!referenceDatasetId && <input type="text" value={reference} disabled={matchMut.isPending} onChange={(e) => { setReference(e.target.value); matchMut.reset(); }} placeholder="reference.csv" className="mt-2 w-full font-mono text-sm" aria-label="Reference path" />}
+          </div>
+          <button className="btn btn-primary" disabled={(!referenceDatasetId && !reference.trim()) || matchMut.isPending || Boolean(activeDatasetId && !activeDataset)} onClick={() => matchMut.mutate()}>
             {matchMut.isPending ? "Matching…" : "Match"}
           </button>
         </div>
         <label className="mt-3 flex items-center gap-2 text-sm text-ink-700">
-          <input
-            type="checkbox"
-            checked={autoConfig}
-            onChange={(e) => setAutoConfig(e.target.checked)}
-          />
-          <span>
-            <span className="text-ink-800">auto-configure</span>{" "}
-            <span className="text-ink-500">
-              · skip the workbench's rules, profile both files instead
-            </span>
-          </span>
+          <input type="checkbox" checked={autoConfig} disabled={matchMut.isPending} onChange={(e) => { setAutoConfig(e.target.checked); matchMut.reset(); }} />
+          <span><span className="text-ink-800">auto-configure</span>{" "}<span className="text-ink-500">· skip the workbench&apos;s rules, profile both sources instead</span></span>
         </label>
         <p className="mt-2 text-[11px] text-ink-500">
-          Paths are resolved under the project root. Use the workbench to tune
-          rules before matching unless auto-configure is on.
+          {referenceDatasetId ? "The selected imported snapshot is used as the reference." : "Reference paths are resolved under the project root."} {activeDatasetId ? "The selected snapshot is used as the target." : "The target path is resolved under the project root."}
         </p>
-        {matchMut.error && (
-          <p className="mt-3 text-xs text-red-700 font-mono break-all">
-            ↳ {humanizeError(matchMut.error.message)}
-          </p>
-        )}
+        {matchMut.error && <p role="alert" className="mt-3 text-xs text-red-700 font-mono break-all">↳ {humanizeError(matchMut.error.message)}</p>}
       </section>
 
       {result && <Results result={result} />}

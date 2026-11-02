@@ -44,6 +44,14 @@ class PreviewRegistry:
         self._entries.move_to_end(run_name)
         return entry.ref
 
+    def labels_path(self, run_name: str) -> Path | None:
+        """Return preview-local label storage while the preview remains registered."""
+        entry = self._entries.get(run_name)
+        if entry is None:
+            return None
+        self._entries.move_to_end(run_name)
+        return entry.tmp_dir / "labels.jsonl"
+
     def _evict(self) -> None:
         while len(self._entries) > self.max_entries:
             _, entry = self._entries.popitem(last=False)

@@ -4,7 +4,7 @@
   "packages": {
     "goldenmatch": {
       "root": "packages/python/goldenmatch/goldenmatch",
-      "module_count": 485,
+      "module_count": 487,
       "modules": [
         {
           "module": "goldenmatch",
@@ -8891,12 +8891,48 @@
           "file": "packages/python/goldenmatch/goldenmatch/web/app.py",
           "defines": [
             "SPAStaticFiles",
+            "_UploadBodyLimitMiddleware",
             "create_app",
             "resolve_web_auth_token"
           ],
           "imports": [
+            "goldenmatch.web.connections",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.routers",
             "goldenmatch.web.state"
+          ]
+        },
+        {
+          "module": "goldenmatch.web.connections",
+          "file": "packages/python/goldenmatch/goldenmatch/web/connections.py",
+          "defines": [
+            "ConnectionInput",
+            "TableImport",
+            "TableRequest",
+            "_connect",
+            "_csv_value",
+            "_id_profiles",
+            "_key",
+            "_load",
+            "_path",
+            "_preview",
+            "_profile",
+            "_save",
+            "_summary",
+            "_table_data",
+            "_validate_address",
+            "_validate_host",
+            "create_connection",
+            "delete_connection",
+            "import_table",
+            "list_connections",
+            "list_tables",
+            "preview_table",
+            "test_connection",
+            "update_connection"
+          ],
+          "imports": [
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -8924,9 +8960,43 @@
           ]
         },
         {
+          "module": "goldenmatch.web.datasets",
+          "file": "packages/python/goldenmatch/goldenmatch/web/datasets.py",
+          "defines": [
+            "ImportUpload",
+            "UploadPreview",
+            "_append_preview_row",
+            "_publish",
+            "_read_meta",
+            "_staging",
+            "_summary",
+            "_table",
+            "_upload_path",
+            "_validate_columns",
+            "_validate_preview_columns",
+            "_validate_row",
+            "dataset_root",
+            "import_upload",
+            "import_worker",
+            "label_path_for_run",
+            "list_datasets",
+            "parse_worker",
+            "parser_slot",
+            "preview_upload",
+            "request_dataset_state",
+            "selected_dataset_id",
+            "upload_dataset",
+            "workspace"
+          ],
+          "imports": [
+            "goldenmatch.web.runs",
+            "goldenmatch.web.state"
+          ]
+        },
+        {
           "module": "goldenmatch.web.labels",
           "file": "packages/python/goldenmatch/goldenmatch/web/labels.py",
-          "purpose": "Web-UI label store.",
+          "purpose": "Web-UI label persistence.",
           "defines": [
             "_canonical_pair",
             "append_label",
@@ -8993,7 +9063,8 @@
           "imports": [
             "goldenmatch._polars_lazy",
             "goldenmatch.config.schemas",
-            "goldenmatch.core.autoconfig"
+            "goldenmatch.core.autoconfig",
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -9009,7 +9080,8 @@
           "imports": [
             "goldenmatch.core.compare_clusters",
             "goldenmatch.core.frame",
-            "goldenmatch.web"
+            "goldenmatch.web",
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -9020,7 +9092,8 @@
             "telemetry"
           ],
           "imports": [
-            "goldenmatch.web.controller_telemetry"
+            "goldenmatch.web.controller_telemetry",
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -9061,6 +9134,7 @@
           "imports": [
             "goldenmatch.core.evaluate",
             "goldenmatch.web",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.labels",
             "goldenmatch.web.pair_prose"
           ]
@@ -9085,7 +9159,8 @@
             "stats"
           ],
           "imports": [
-            "goldenmatch.identity"
+            "goldenmatch.identity",
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -9099,6 +9174,7 @@
           ],
           "imports": [
             "goldenmatch._api",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.labels"
           ]
         },
@@ -9117,6 +9193,7 @@
             "goldenmatch.config.schemas",
             "goldenmatch.core.autoconfig",
             "goldenmatch.core.pipeline",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.preview"
           ]
         },
@@ -9134,7 +9211,8 @@
           ],
           "imports": [
             "goldenmatch._api",
-            "goldenmatch.core.memory.store"
+            "goldenmatch.core.memory.store",
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -9162,6 +9240,7 @@
           "imports": [
             "goldenmatch._polars_lazy",
             "goldenmatch.config.schemas",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.preview"
           ]
         },
@@ -9172,6 +9251,7 @@
             "get_project"
           ],
           "imports": [
+            "goldenmatch.web.datasets",
             "goldenmatch.web.rules",
             "goldenmatch.web.runs"
           ]
@@ -9186,7 +9266,8 @@
           ],
           "imports": [
             "goldenmatch._polars_lazy",
-            "goldenmatch.core.quality"
+            "goldenmatch.core.quality",
+            "goldenmatch.web.datasets"
           ]
         },
         {
@@ -9200,6 +9281,7 @@
           ],
           "imports": [
             "goldenmatch.config.schemas",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.rules"
           ]
         },
@@ -9219,6 +9301,7 @@
             "goldenmatch.core.lineage",
             "goldenmatch.core.pairs",
             "goldenmatch.core.pipeline",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.preview",
             "goldenmatch.web.settings"
           ]
@@ -9237,6 +9320,7 @@
           ],
           "imports": [
             "goldenmatch.web",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.labels",
             "goldenmatch.web.pair_prose"
           ]
@@ -9253,6 +9337,7 @@
           "imports": [
             "goldenmatch.config.schemas",
             "goldenmatch.core.sensitivity",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.preview"
           ]
         },
@@ -9281,6 +9366,7 @@
             "goldenmatch.core.autoconfig",
             "goldenmatch.core.suggest",
             "goldenmatch.core.suggest.surface",
+            "goldenmatch.web.datasets",
             "goldenmatch.web.preview"
           ]
         },
@@ -9300,7 +9386,8 @@
             "goldenmatch._api",
             "goldenmatch.core.cluster",
             "goldenmatch.core.frame",
-            "goldenmatch.web"
+            "goldenmatch.web",
+            "goldenmatch.web.datasets"
           ]
         },
         {

@@ -13,16 +13,12 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch) -> TestClient:
-    """Build an isolated TestClient with a fresh memory DB per test."""
+def client(tmp_path) -> TestClient:
+    """Build an isolated legacy dataset and its dataset-local memory store."""
     from goldenmatch.web.app import create_app
     from goldenmatch.web.state import AppState
 
-    db_path = tmp_path / "memory.db"
-    # Re-route default memory DB path through env so get_memory() picks it up.
-    monkeypatch.setenv("GOLDENMATCH_MEMORY_PATH", str(db_path))
-    # CWD-relative path for any code using it.
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data.csv").write_text("id,name\n42,Ada\n99,Grace\n", encoding="utf-8")
 
     state = AppState.from_project_dir(tmp_path)
     app = create_app(state)

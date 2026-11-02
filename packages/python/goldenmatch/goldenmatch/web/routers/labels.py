@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, model_validator
 
+from goldenmatch.web.datasets import label_path_for_run, request_dataset_state
 from goldenmatch.web.labels import append_label, read_labels_dedup
 
 router = APIRouter(prefix="/api/v1/labels")
@@ -17,6 +19,7 @@ class LabelIn(BaseModel):
     row_id_b: int
     label: Literal["match", "non_match"]
     note: str | None = None
+    run_name: str | None = None
 
     @model_validator(mode="after")
     def _reject_self_pair(self) -> LabelIn:
@@ -25,30 +28,11 @@ class LabelIn(BaseModel):
         return self
 
 
-def _mirror_to_memory_store(payload: LabelIn, project_root) -> tuple[bool, str | None]:
-    """Mirror a steward label into goldenmatch's Learning Memory store.
+def _mirror_to_memory_store(payload: LabelIn, project_root, dataset_id: str) -> tuple[bool, str | None]:
+    """Mirror a saved full-data run decision into dataset-scoped Learning Memory.
 
-    The labels.jsonl is the workbench's steward-facing record of decisions;
-    MemoryStore is the canonical store the matching pipeline reads on every
-    run via ``apply_corrections`` (CLAUDE.md: "v1.6.0 Learning Memory:
-    end-to-end loop wired"). Without this mirror, web labels would be
-    cosmetic — they'd appear in the inspector tab but the next "Run for
-    real" would re-discover the same false positives the user just rejected.
-
-    Caveat: ``add_correction`` writes empty ``record_hash``, so the
-    re-anchoring path falls back to row-ID presence (CLAUDE.md: "empty-hash
-    entries via the row-ID-presence path"). This works reliably for full-
-    data runs (deterministic ``__row_id__``) but NOT for sampled previews,
-    where row IDs depend on sample order. The mirror is durable for runs
-    started via "Run for real"; preview-only labels may not re-apply.
-
-    Failures here log but don't block the HTTP write to labels.jsonl —
-    the steward record is the source of truth for the UI.
-
-    Returns ``(mirrored, error)`` so the route can surface mirror-fall-
-    through to the UI (yellow toast / banner) rather than silently
-    succeeding while the next pipeline run rediscovers the same wrong
-    decision.
+    Preview labels are stored separately and never mirrored because sampled
+    row IDs do not correspond to the full dataset.
     """
     try:
         from goldenmatch._api import add_correction
@@ -57,12 +41,13 @@ def _mirror_to_memory_store(payload: LabelIn, project_root) -> tuple[bool, str |
             id_a=payload.row_id_a,
             id_b=payload.row_id_b,
             decision=decision,
-            source="steward",  # trust=1.0 — this is a human gating action
+            source="steward",
             reason=payload.note,
-            dataset=str(project_root),
+            dataset=dataset_id,
+            path=str(Path(project_root) / ".goldenmatch" / "memory.db"),
         )
         return True, None
-    except Exception as exc:  # MemoryStore can fail if backend unwritable etc.
+    except Exception as exc:
         msg = f"{type(exc).__name__}: {exc}"
         log.warning("label mirror to MemoryStore failed: %s", msg)
         return False, msg
@@ -70,9 +55,16 @@ def _mirror_to_memory_store(payload: LabelIn, project_root) -> tuple[bool, str |
 
 @router.post("")
 def post_label(payload: LabelIn, request: Request) -> dict:
-    state = request.app.state.app_state
-    record = append_label(state.labels_path, payload.model_dump())
-    mirrored, mirror_error = _mirror_to_memory_store(payload, state.project_root)
+    state = request_dataset_state(request)
+    target = label_path_for_run(state, payload.run_name) if payload.run_name else state.labels_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    is_saved_run = payload.run_name is not None and target == state.labels_path
+    record = append_label(target, payload.model_dump())
+    mirrored, mirror_error = (
+        _mirror_to_memory_store(payload, state.project_root, state.memory_dataset)
+        if is_saved_run
+        else (False, None)
+    )
     record["mirrored"] = mirrored
     if mirror_error is not None:
         record["mirror_error"] = mirror_error
@@ -80,6 +72,8 @@ def post_label(payload: LabelIn, request: Request) -> dict:
 
 
 @router.get("")
-def list_labels(request: Request) -> list[dict]:
-    state = request.app.state.app_state
-    return read_labels_dedup(state.labels_path)
+def list_labels(request: Request, run_name: str | None = None) -> list[dict]:
+    state = request_dataset_state(request)
+    if run_name is None:
+        return read_labels_dedup(state.labels_path)
+    return read_labels_dedup(label_path_for_run(state, run_name))

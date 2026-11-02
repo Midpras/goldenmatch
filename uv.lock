@@ -1380,6 +1380,10 @@ web = [
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
 ]
+web-data = [
+    { name = "cryptography" },
+    { name = "psycopg", extra = ["binary"] },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1388,6 +1392,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'llm'", specifier = ">=0.30" },
     { name = "azure-storage-blob", marker = "extra == 'azure-blob'", specifier = ">=12.19" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.26" },
+    { name = "cryptography", marker = "extra == 'web-data'", specifier = ">=43" },
     { name = "databricks-sql-connector", marker = "extra == 'databricks'", specifier = ">=3.0" },
     { name = "datafusion", marker = "extra == 'datafusion'", specifier = ">=53,<54" },
     { name = "duckdb", specifier = ">=0.9" },
@@ -1419,6 +1424,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.1" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'web-data'", specifier = ">=3.1" },
     { name = "psycopg-pool", marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pyarrow", specifier = ">=10" },
     { name = "pyarrow", marker = "extra == 'bench'", specifier = ">=15" },
@@ -1451,7 +1457,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.29" },
     { name = "venv-pack", marker = "extra == 'spark'", specifier = ">=0.2" },
 ]
-provides-extras = ["dev", "embeddings", "ontology", "vision", "documents", "audio", "inhouse-embeddings", "llm", "postgres", "mcp", "pprl", "snowflake", "bigquery", "databricks", "salesforce", "redshift", "s3", "gcs", "azure-blob", "sqlserver", "mysql", "duckdb", "pgvector", "ray", "datafusion", "spark", "agent", "polars", "quality", "transform", "native", "lance", "llama", "local-llm", "web", "bench", "all"]
+provides-extras = ["dev", "embeddings", "ontology", "vision", "documents", "audio", "inhouse-embeddings", "llm", "postgres", "mcp", "pprl", "snowflake", "bigquery", "databricks", "salesforce", "redshift", "s3", "gcs", "azure-blob", "sqlserver", "mysql", "duckdb", "pgvector", "ray", "datafusion", "spark", "agent", "polars", "quality", "transform", "native", "lance", "llama", "local-llm", "web", "web-data", "bench", "all"]
 
 [[package]]
 name = "goldenmatch-monorepo"

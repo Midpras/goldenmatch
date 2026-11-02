@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+### Added
+
+- WebUI Data page for bounded CSV and selected-sheet Excel `.xlsx` imports into
+  immutable, persistent dataset snapshots. Snapshot selection scopes rules,
+  preview registries, saved runs, labels, and Learning Memory; preview decisions
+  remain local to the preview rather than contaminating full-data corrections.
+- PostgreSQL Connections menu with encrypted saved passwords, TLS controls,
+  connection tests, table discovery, previews, and read-only streaming imports.
+  The `web-data` extra supplies encryption and PostgreSQL drivers; the Coolify
+  image includes it, and its GitHub Actions smoke exercises real database imports.
+- Matching between two imported snapshots, upload/output/resource limits, and
+  readiness checks that recognize imported data without a legacy `data.csv`.
+
 ## [3.22.0] - 2026-09-25
 
 <!-- README-callout

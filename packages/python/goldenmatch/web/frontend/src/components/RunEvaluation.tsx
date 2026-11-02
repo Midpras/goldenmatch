@@ -114,6 +114,7 @@ export function RunEvaluation({ runName }: Props) {
             <PairFieldBreakdown
               key={`${p.row_id_a}-${p.row_id_b}-${i}`}
               pair={p}
+              runName={runName}
             />
           ))
         )}

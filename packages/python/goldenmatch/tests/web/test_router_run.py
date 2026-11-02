@@ -51,7 +51,8 @@ def test_run_400_when_no_rules_and_no_autoconfig(tmp_path):
     from goldenmatch.web.app import create_app
     from goldenmatch.web.state import AppState
 
-    # Empty project — no goldenmatch.yml so /rules can't lazy-seed.
+    # Data exists, but no rules are configured and auto-config was not requested.
+    (tmp_path / "data.csv").write_text("name\nAda\n", encoding="utf-8")
     bare = TestClient(create_app(AppState.from_project_dir(tmp_path)))
     resp = bare.post("/api/v1/run", json={})
     assert resp.status_code == 400

@@ -1,9 +1,4 @@
-"""Memory store browser endpoints — corrections + stats + learn trigger.
-
-These tests chdir into a tmp dir before posting labels so the
-MemoryStore default path (``.goldenmatch/memory.db``, CWD-relative) lands
-in an isolated location instead of polluting the repo's working dir.
-"""
+"""Dataset-local memory endpoints: steward corrections, stats, and learning."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,9 +14,10 @@ def isolated_client(client, tmp_path: Path, monkeypatch):
 
 
 def _label_pair(client, a: int, b: int, label: str = "match") -> None:
+    run_name = client.get("/api/v1/project").json()["runs"][0]["run_name"]
     client.post(
         "/api/v1/labels",
-        json={"row_id_a": a, "row_id_b": b, "label": label},
+        json={"row_id_a": a, "row_id_b": b, "label": label, "run_name": run_name},
     )
 
 

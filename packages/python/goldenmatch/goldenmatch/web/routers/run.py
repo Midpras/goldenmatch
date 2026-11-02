@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +44,7 @@ from goldenmatch.config.schemas import (
 )
 from goldenmatch.core.lineage import build_lineage
 from goldenmatch.core.pipeline import run_dedupe_df
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1")
 
@@ -62,6 +64,7 @@ def _execute_run(
     auto_config: bool,
     llm_boost: bool,
     rules: RulesPayload | None,
+    dataset_id: str,
 ) -> dict[str, Any]:
     src = project_root / "data.csv"
     if not src.exists():
@@ -118,6 +121,17 @@ def _execute_run(
         _ctrl_state = _LAST_CONTROLLER_RUN.get()
         if _ctrl_state is not None:
             ctrl_profile, ctrl_history = _ctrl_state
+    from goldenmatch.config.schemas import MemoryConfig
+    memory_dataset = str(project_root) if dataset_id == "legacy" else dataset_id
+    if config.memory is None:
+        config.memory = MemoryConfig(path=str(project_root / ".goldenmatch" / "memory.db"), dataset=memory_dataset)
+    else:
+        config.memory = config.memory.model_copy(update={
+            "backend": "sqlite",
+            "path": str(project_root / ".goldenmatch" / "memory.db"),
+            "dataset": memory_dataset,
+        })
+    if auto_config:
         result = run_dedupe_df(df, config, output_clusters=True, auto_config=False)
     else:
         result = run_dedupe_df(df, config, output_clusters=True)
@@ -138,10 +152,11 @@ def _execute_run(
     )
 
     now = datetime.now(UTC)
-    run_name = now.strftime("%Y%m%d_%H%M%S")
+    run_name = f"{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     lineage = {
         "generated_at": now.isoformat(),
         "run_name": run_name,
+        "dataset_id": dataset_id,
         "total_pairs": len(lineage_records),
         "pairs": lineage_records,
     }
@@ -167,6 +182,7 @@ def _execute_run(
     clusters_path.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
 
     return {
+        "dataset_id": dataset_id,
         "run_name": run_name,
         "row_count": df.height,
         "cluster_count": len(set(rid_to_cid.values())) if rid_to_cid else df.height,
@@ -187,7 +203,7 @@ def _execute_run(
 
 @router.post("/run")
 async def run_real(payload: RunRequest, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     rules = payload.rules or state.rules
     if not payload.auto_config and rules is None:
         raise HTTPException(
@@ -207,6 +223,7 @@ async def run_real(payload: RunRequest, request: Request) -> dict:
                     auto_config=payload.auto_config,
                     llm_boost=payload.llm_boost,
                     rules=None if payload.auto_config else rules,
+                    dataset_id=state.dataset_id,
                 ),
             ),
             timeout=RUN_TIMEOUT_S,

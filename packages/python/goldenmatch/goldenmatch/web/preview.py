@@ -153,6 +153,7 @@ def run_preview(
     sample_n: int,
     seed: int,
     registry: PreviewRegistry,
+    dataset_id: str = "legacy",
 ) -> RunRef:
     """Sample source CSV, run dedupe in-process, register result.
 
@@ -199,10 +200,11 @@ def run_preview(
         clusters=clusters,
     )
 
-    run_name = f"preview-{uuid.uuid4().hex[:8]}"
+    run_name = f"preview-{uuid.uuid4().hex[:16]}"
     lineage = {
         "generated_at": datetime.now(UTC).isoformat(),
         "run_name": run_name,
+        "dataset_id": dataset_id,
         "total_pairs": len(lineage_records),
         "pairs": lineage_records,
     }
