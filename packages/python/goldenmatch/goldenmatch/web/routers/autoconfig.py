@@ -24,6 +24,7 @@ from goldenmatch.config.schemas import (
     RulesPayload,
 )
 from goldenmatch.core.autoconfig import _LAST_CONTROLLER_RUN, auto_configure_df
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1")
 
@@ -188,7 +189,7 @@ def _autoconfigure(
 
 @router.post("/autoconfig")
 async def autoconfigure(request: Request, domain: str | None = None) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     loop = asyncio.get_running_loop()
     try:
         payload, cfg, ctrl_profile, ctrl_history = await asyncio.wait_for(

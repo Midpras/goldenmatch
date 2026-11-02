@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from goldenmatch.core.evaluate import evaluate_pairs
 from goldenmatch.web import runs as runs_mod
+from goldenmatch.web.datasets import label_path_for_run, request_dataset_state
 from goldenmatch.web.labels import read_labels_dedup
 from goldenmatch.web.pair_prose import with_prose
 
@@ -38,7 +39,7 @@ def _find_run(state, run_name: str):
 
 @router.get("/{run_name}/evaluation")
 def run_evaluation(run_name: str, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     ref = _find_run(state, run_name)
 
     # Predicted pairs: every pair the run's lineage emitted with its score.
@@ -51,7 +52,7 @@ def run_evaluation(run_name: str, request: Request) -> dict:
     # labels (non_match) DON'T extend ground truth — they shrink the
     # "wrong predictions" set we'd otherwise call FPs. The downstream
     # UI uses both to render the band-of-confusion.
-    labels = read_labels_dedup(state.labels_path)
+    labels = read_labels_dedup(label_path_for_run(state, run_name))
     positives: set[tuple[int, int]] = set()
     negatives: set[tuple[int, int]] = set()
     for L in labels:

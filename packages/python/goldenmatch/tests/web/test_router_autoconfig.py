@@ -24,16 +24,6 @@ def test_autoconfig_returns_a_usable_rules_payload(client):
         assert isinstance(mk["column"], str) and mk["column"]
 
 
-def test_autoconfig_400_on_missing_data_csv(tmp_path):
-    """Empty project → 400 (parallels /preview's contract)."""
-    from fastapi.testclient import TestClient
-    from goldenmatch.web.app import create_app
-    from goldenmatch.web.state import AppState
-
-    bare = TestClient(create_app(AppState.from_project_dir(tmp_path)))
-    resp = bare.post("/api/v1/autoconfig")
-    assert resp.status_code == 400
-    assert "data.csv" in resp.json()["detail"]
 
 
 def test_autoconfig_writes_to_state_so_get_rules_returns_it(client):

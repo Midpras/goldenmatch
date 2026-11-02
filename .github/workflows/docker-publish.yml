@@ -15,6 +15,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'packages/python/pyproject.toml'
       - 'packages/python/goldenmatch/**'
+      - 'scripts/smoke_web_data.py'
   workflow_dispatch:
 
 permissions:
@@ -85,9 +86,28 @@ jobs:
             exit 1
           fi
 
-          container=$(docker run -d --mount "type=bind,src=$data_dir,dst=/data" -p 127.0.0.1:5050:5050 -e "GOLDENMATCH_WEB_TOKEN=$SMOKE_TOKEN" "$image")
-          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          connection_key=$(docker run --rm --entrypoint python "$image" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+          docker network create goldenmatch-smoke
+          database=$(docker run -d --network goldenmatch-smoke --name goldenmatch-smoke-db -e POSTGRES_PASSWORD=workflow-admin-only postgres:17-alpine)
+          container=
+          cleanup() {
+            [[ -z "$container" ]] || docker rm -f "$container" >/dev/null 2>&1 || true
+            docker rm -f "$database" >/dev/null 2>&1 || true
+            docker network rm goldenmatch-smoke >/dev/null 2>&1 || true
+          }
           trap cleanup EXIT
+          for attempt in {1..30}; do
+            docker exec "$database" pg_isready -U postgres && break
+            sleep 1
+          done
+          docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE web_import_smoke (id integer, name text);
+          INSERT INTO web_import_smoke VALUES (1, 'Ada'), (2, 'Grace');
+          CREATE USER web_reader WITH PASSWORD 'workflow-reader-only';
+          GRANT USAGE ON SCHEMA public TO web_reader;
+          GRANT SELECT ON web_import_smoke TO web_reader;
+          SQL
+          container=$(docker run -d --network goldenmatch-smoke --mount "type=bind,src=$data_dir,dst=/data" -p 127.0.0.1:5050:5050 -e "GOLDENMATCH_WEB_TOKEN=$SMOKE_TOKEN" -e "GOLDENMATCH_CONNECTION_KEY=$connection_key" -e GOLDENMATCH_WEB_ALLOWED_DB_HOSTS=goldenmatch-smoke-db "$image")
 
           ready=false
           for attempt in {1..30}; do
@@ -111,6 +131,12 @@ jobs:
           [[ "$anonymous_status" == 401 ]]
           authenticated=$(curl --silent --show-error --fail -H "Authorization: Bearer $SMOKE_TOKEN" http://127.0.0.1:5050/api/v1/project)
           jq -e '.project_root == "/data"' <<<"$authenticated" >/dev/null
+          docker cp scripts/smoke_web_data.py "$container:/tmp/smoke_web_data.py"
+          docker exec "$container" python /tmp/smoke_web_data.py \
+            --token "$SMOKE_TOKEN" \
+            --db-host goldenmatch-smoke-db \
+            --db-user web_reader \
+            --db-password workflow-reader-only
 
       - name: Log in to ghcr.io
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3

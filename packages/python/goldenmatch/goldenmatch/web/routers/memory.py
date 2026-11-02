@@ -15,11 +15,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from goldenmatch._api import get_memory, learn, memory_stats
 from goldenmatch.core.memory.store import Correction
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1/memory")
 
@@ -79,7 +80,9 @@ class CorrectionCreate(BaseModel):
 
 
 @router.post("/corrections", status_code=201)
-def create_correction(body: CorrectionCreate) -> dict[str, Any]:
+def create_correction(body: CorrectionCreate, request: Request) -> dict[str, Any]:
+    state = request_dataset_state(request)
+    memory_path = str(state.project_root / ".goldenmatch" / "memory.db")
     """File a pair-level or field-level Correction into Learning Memory."""
     from goldenmatch.core.memory.store import (
         HIGH_TRUST_SOURCES,
@@ -126,7 +129,7 @@ def create_correction(body: CorrectionCreate) -> dict[str, Any]:
             original_score=0.0,
             matchkey_name=body.matchkey_name,
             reason=body.reason,
-            dataset=body.dataset,
+            dataset=state.memory_dataset,
             created_at=datetime.now(UTC),
             field_name=body.field_name,
             original_value=body.original_value,
@@ -150,11 +153,11 @@ def create_correction(body: CorrectionCreate) -> dict[str, Any]:
             original_score=0.0,
             matchkey_name=body.matchkey_name,
             reason=body.reason,
-            dataset=body.dataset,
+            dataset=state.memory_dataset,
             created_at=datetime.now(UTC),
         )
 
-    store = get_memory()
+    store = get_memory(memory_path)
     try:
         store.add_correction(correction)
     finally:
@@ -164,15 +167,17 @@ def create_correction(body: CorrectionCreate) -> dict[str, Any]:
 
 @router.get("/corrections")
 def list_corrections(
+    request: Request,
     dataset: str | None = Query(
         None,
-        description="Filter to corrections for a specific dataset (e.g. project_root).",
+        description="Legacy parameter; results are always restricted to the selected dataset.",
     ),
     limit: int = Query(CORRECTIONS_CAP, ge=1, le=CORRECTIONS_CAP),
 ) -> dict:
-    store = get_memory()
+    state = request_dataset_state(request)
+    store = get_memory(str(state.project_root / ".goldenmatch" / "memory.db"))
     try:
-        items = store.get_corrections(dataset=dataset)
+        items = store.get_corrections(dataset=state.memory_dataset)
     finally:
         store.close()
 
@@ -191,8 +196,9 @@ def list_corrections(
 
 
 @router.get("/stats")
-def stats() -> dict:
-    raw = memory_stats()
+def stats(request: Request) -> dict:
+    state = request_dataset_state(request)
+    raw = memory_stats(str(state.project_root / ".goldenmatch" / "memory.db"))
     last = raw.get("last_learn_time")
     return {
         "count": raw.get("count", 0),
@@ -204,11 +210,13 @@ def stats() -> dict:
 
 @router.post("/learn")
 def trigger_learn(
+    request: Request,
     matchkey_name: str | None = Query(
         None,
         description="Restrict the learning pass to this matchkey only.",
     ),
 ) -> dict:
+    state = request_dataset_state(request)
     """Run a learning pass over accumulated corrections.
 
     Threshold tuning fires when ≥10 corrections exist (LearningConfig
@@ -217,7 +225,7 @@ def trigger_learn(
     the UI can show "not enough data yet" without a separate code path.
     """
     try:
-        adjustments = learn(matchkey_name=matchkey_name)
+        adjustments = learn(matchkey_name=matchkey_name, path=str(state.project_root / ".goldenmatch" / "memory.db"))
     except Exception as exc:
         # Engine surfaces a few narrow failure modes here; map to 400 so the
         # UI can render the message rather than dumping a 500 trace.

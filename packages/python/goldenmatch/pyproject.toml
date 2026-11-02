@@ -279,6 +279,12 @@ web = [
     "httpx>=0.27",  # used by TestClient and tests
     "python-multipart>=0.0.9",
 ]
+# Read-only WebUI database imports and encrypted connection credentials.
+# Spreadsheet parsing already uses the core openpyxl dependency.
+web-data = [
+    "cryptography>=43",
+    "psycopg[binary]>=3.1",
+]
 # Head-to-head accuracy panel (probabilistic vs Splink). Loads datasets via
 # splink_datasets (ships with splink) with a vendored-parquet fallback.
 bench = [

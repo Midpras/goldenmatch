@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from goldenmatch._polars_lazy import pl
 from goldenmatch.config.schemas import RulesPayload
+from goldenmatch.web.datasets import request_dataset_state
 from goldenmatch.web.preview import run_preview
 
 router = APIRouter(prefix="/api/v1")
@@ -50,7 +51,7 @@ def _reject_unsupported_scorers(rules: RulesPayload) -> None:
 @router.post("/preview")
 async def preview(payload: PreviewRequest, request: Request) -> dict:
     _reject_unsupported_scorers(payload.rules)
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     loop = asyncio.get_running_loop()
     try:
         ref = await asyncio.wait_for(
@@ -62,6 +63,7 @@ async def preview(payload: PreviewRequest, request: Request) -> dict:
                     sample_n=payload.sample.n,
                     seed=payload.sample.seed,
                     registry=state.registry,
+                    dataset_id=state.dataset_id,
                 ),
             ),
             timeout=PREVIEW_TIMEOUT_S,
@@ -77,4 +79,4 @@ async def preview(payload: PreviewRequest, request: Request) -> dict:
         # Most common workbench mistake: a matchkey references a column that
         # doesn't exist in data.csv. Surface the engine's message verbatim.
         raise HTTPException(status_code=400, detail=f"preview failed: {exc}")
-    return {"run_name": ref.run_name}
+    return {"run_name": ref.run_name, "dataset_id": state.dataset_id}

@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from goldenmatch._polars_lazy import pl
+from goldenmatch.web.datasets import request_dataset_state
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ async def quality(
         description="Optional GoldenCheck domain hint (healthcare, finance, ecommerce).",
     ),
 ) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     loop = asyncio.get_running_loop()
     try:
         return await asyncio.wait_for(

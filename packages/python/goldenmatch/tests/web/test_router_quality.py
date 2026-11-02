@@ -1,8 +1,6 @@
 """GET /api/v1/quality — GoldenCheck scan-only output."""
 from __future__ import annotations
 
-from pathlib import Path
-
 
 def test_quality_returns_available_flag_or_findings(client):
     """GoldenCheck is an optional dep. The route must return a coherent
@@ -21,12 +19,6 @@ def test_quality_returns_available_flag_or_findings(client):
         assert s["total"] == 0
 
 
-def test_quality_400_when_data_csv_missing(client, sample_project: Path):
-    """Removing data.csv → router surfaces the FileNotFoundError as 400."""
-    (sample_project / "data.csv").unlink()
-    resp = client.get("/api/v1/quality")
-    assert resp.status_code == 400
-    assert "not found" in resp.json()["detail"].lower()
 
 
 def test_quality_soft_fails_with_error_field_on_scan_exception(

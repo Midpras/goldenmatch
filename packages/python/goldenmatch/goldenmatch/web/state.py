@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,9 @@ class AppState:
     rules: RulesPayload | None = None
     runs_dir: Path | None = None
     registry: PreviewRegistry = field(default_factory=PreviewRegistry)
+    dataset_id: str = "legacy"
+    dataset_states: dict[str, AppState] = field(default_factory=dict, repr=False)
+    dataset_states_lock: Any = field(default_factory=threading.Lock, repr=False)
     # v1.7-v1.12 controller telemetry from the most recent zero-config call
     # (autoconfig or auto_config=true run). Stashed here so the workbench can
     # surface stop_reason, RunHistory decisions, ComplexityProfile health, and
@@ -33,6 +37,11 @@ class AppState:
     last_controller_source: str | None = None  # "autoconfig" or "run"
     last_controller_run_name: str | None = None  # run_name when source="run"
     last_controller_recorded_at: str | None = None  # ISO timestamp
+
+    @property
+    def memory_dataset(self) -> str:
+        """Keep pre-import corrections anchored to the legacy project path."""
+        return str(self.project_root) if self.dataset_id == "legacy" else self.dataset_id
 
     @classmethod
     def from_project_dir(cls, project_dir: Path, runs_dir: Path | None = None) -> AppState:

@@ -56,7 +56,7 @@ export type LabelRecord = {
  *  the pair within this run. */
 export type RunLabelRecord = LabelRecord & { cluster_id: number };
 
-export type PreviewResponse = { run_name: string };
+export type PreviewResponse = { run_name: string; dataset_id?: string };
 export type SaveRulesResponse = { saved: boolean; path: string };
 
 export type EvaluationSummary = {
@@ -368,6 +368,7 @@ export type RunResponse = {
   clusters_path: string;
   auto_config: boolean;
   llm_boost: boolean;
+  dataset_id?: string;
 };
 
 export type WebSettings = {
@@ -518,10 +519,12 @@ export function onAuthExpired(callback: () => void) {
 
 const apiFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const token = authToken;
+  const datasetId = getActiveDatasetId();
   let request: Promise<Response>;
-  if (token) {
+  if (token || datasetId) {
     const headers = new Headers(init?.headers);
-    headers.set("Authorization", `Bearer ${token}`);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (datasetId) headers.set("X-Goldenmatch-Dataset", datasetId);
     request = fetch(input, { ...init, headers });
   } else {
     request = init === undefined ? fetch(input) : fetch(input, init);
@@ -551,6 +554,75 @@ const json = async <T>(resp: Response): Promise<T> => {
   if (!resp.ok) throw new ApiError(resp.status, `${resp.status} ${await resp.text()}`);
   return resp.json() as Promise<T>;
 };
+export type DatasetSummary = {
+  id: string;
+  name: string;
+  source: string;
+  row_count: number | null;
+  columns: string[];
+  created_at: string | null;
+};
+
+export type DataPreview = { columns: string[]; rows: unknown[][] };
+export type DatasetList = { items: DatasetSummary[] };
+export type UploadStaged = { upload_id: string; sheets: string[] };
+export type ConnectionSummary = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  sslmode: "require" | "verify-full" | "disable";
+  has_password: boolean;
+};
+export type ConnectionList = { items: ConnectionSummary[]; configured: boolean };
+export type DatabaseTable = { schema: string; name: string };
+
+export type ConnectionDraft = Omit<ConnectionSummary, "id" | "has_password"> & {
+  password?: string;
+};
+
+export const ACTIVE_DATASET_STORAGE_KEY = "goldenmatch.datasetId";
+
+// A tab keeps its dataset until reload, even if another tab changes the saved
+// selection. Reading localStorage per request could label stale rows in a new
+// dataset without updating this tab's rendered results.
+const pageDatasetId = typeof localStorage === "undefined"
+  ? null
+  : localStorage.getItem(ACTIVE_DATASET_STORAGE_KEY);
+
+export function getActiveDatasetId(): string | null {
+  return pageDatasetId;
+}
+
+export function setActiveDatasetId(id: string | null): void {
+  if (typeof localStorage === "undefined") return;
+  if (id) localStorage.setItem(ACTIVE_DATASET_STORAGE_KEY, id);
+  else localStorage.removeItem(ACTIVE_DATASET_STORAGE_KEY);
+}
+
+const datasetUpload = (file: File): Promise<UploadStaged> => {
+  const form = new FormData();
+  form.append("file", file);
+  return postForm("/api/v1/datasets/uploads", form);
+};
+
+const datasetPreview = (
+  uploadId: string,
+  opts: { sheet?: string; delimiter?: string },
+): Promise<DataPreview> =>
+  post(`/api/v1/datasets/uploads/${encodeURIComponent(uploadId)}/preview`, opts);
+
+const datasetImport = (
+  uploadId: string,
+  opts: { name: string; sheet?: string; delimiter?: string },
+): Promise<DatasetSummary> =>
+  post(`/api/v1/datasets/uploads/${encodeURIComponent(uploadId)}/import`, opts);
+
+const connectionPath = (id: string, suffix = "") =>
+  `/api/v1/connections/${encodeURIComponent(id)}${suffix}`;
+
 
 const post = <T>(path: string, body: unknown): Promise<T> =>
   apiFetch(path, {
@@ -573,6 +645,39 @@ const postForm = <T>(path: string, form: FormData): Promise<T> =>
   apiFetch(path, { method: "POST", body: form }).then((r) => json<T>(r));
 
 export const api = {
+  datasets: (): Promise<DatasetList> =>
+    apiFetch("/api/v1/datasets").then((r) => json<DatasetList>(r)),
+  uploadDataset: datasetUpload,
+  previewDatasetUpload: datasetPreview,
+  importDatasetUpload: datasetImport,
+  createConnection: (body: ConnectionDraft): Promise<ConnectionSummary> =>
+    post("/api/v1/connections", body),
+  updateConnection: (id: string, body: ConnectionDraft): Promise<ConnectionSummary> =>
+    apiFetch(connectionPath(id), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => json<ConnectionSummary>(r)),
+  deleteConnection: (id: string): Promise<{ deleted: boolean }> =>
+    apiFetch(connectionPath(id), { method: "DELETE" }).then((r) =>
+      json<{ deleted: boolean }>(r),
+    ),
+  connections: (): Promise<ConnectionList> =>
+    apiFetch("/api/v1/connections").then((r) => json<ConnectionList>(r)),
+  testConnection: (id: string): Promise<{ ok: boolean }> =>
+    post(connectionPath(id, "/test"), {}),
+  connectionTables: (id: string): Promise<{ items: DatabaseTable[] }> =>
+    apiFetch(connectionPath(id, "/tables")).then((r) =>
+      json<{ items: DatabaseTable[] }>(r),
+    ),
+  previewConnectionTable: (
+    id: string,
+    body: { schema: string; table: string },
+  ): Promise<DataPreview> => post(connectionPath(id, "/preview"), body),
+  importConnectionTable: (
+    id: string,
+    body: { schema: string; table: string; name: string },
+  ): Promise<DatasetSummary> => post(connectionPath(id, "/import"), body),
   project: (): Promise<Project> =>
     apiFetch("/api/v1/project")
       .then((r) => json<Project>(r))
@@ -616,6 +721,7 @@ export const api = {
     row_id_b: number;
     label: "match" | "non_match";
     note?: string;
+    run_name?: string;
   }): Promise<LabelRecord> => post<LabelRecord>("/api/v1/labels", body),
   runLabels: (name: string): Promise<RunLabelRecord[]> =>
     apiFetch(`/api/v1/runs/${name}/labels`).then((r) =>
@@ -665,7 +771,8 @@ export const api = {
       json<LearnResponse>(r),
     ),
   match: (body: {
-    reference_path: string;
+    reference_path?: string;
+    reference_dataset_id?: string;
     target_path?: string;
     auto_config?: boolean;
     rules?: RulesPayload;

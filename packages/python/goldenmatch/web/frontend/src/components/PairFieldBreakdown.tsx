@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Pair, FieldBreakdown } from "../lib/types";
 
-type Props = { pair: Pair };
+type Props = { pair: Pair; runName?: string };
 
 const renderValue = (v: unknown): string => {
   if (v == null) return "—";
@@ -29,7 +29,7 @@ function diffMark(diff_type: string): string {
   return "·";
 }
 
-export function PairFieldBreakdown({ pair }: Props) {
+export function PairFieldBreakdown({ pair, runName }: Props) {
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
   const [mirrorWarning, setMirrorWarning] = useState<string | null>(null);
   const [open, setOpen] = useState(true); // expanded by default — this IS the content
@@ -40,15 +40,17 @@ export function PairFieldBreakdown({ pair }: Props) {
         row_id_a: pair.row_id_a,
         row_id_b: pair.row_id_b,
         label,
+        ...(runName ? { run_name: runName } : {}),
       }),
     onSuccess: (data, variables) => {
       setSavedLabel(variables);
       setTimeout(() => setSavedLabel(null), 1200);
-      // Surface mirror-fall-through: label landed in labels.jsonl but the
-      // MemoryStore mirror failed → pipeline won't pick up the decision.
       if (data && data.mirrored === false) {
         setMirrorWarning(
-          data.mirror_error ?? "memory mirror failed — label won't apply on next run",
+          data.mirror_error ??
+            (runName
+              ? "label saved for this run; it was not added to dataset learning memory"
+              : "memory mirror failed — label won't apply on next run"),
         );
       } else {
         setMirrorWarning(null);

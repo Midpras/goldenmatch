@@ -30,6 +30,7 @@ from goldenmatch.identity import (
     manual_merge,
     manual_split,
 )
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1/identities")
 
@@ -41,7 +42,7 @@ def _store_for(request: Request) -> IdentityStore:
     we don't hold a handle across the request lifecycle. The path is fixed
     relative to the project root for parity with MemoryStore behaviour.
     """
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     db_path = Path(state.project_root) / ".goldenmatch" / "identity.db"
     if not db_path.exists():
         raise HTTPException(

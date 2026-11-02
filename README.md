@@ -405,10 +405,69 @@ docker run -e POSTGRES_PASSWORD=secret ghcr.io/benseverndev-oss/goldenmatch-exte
 - **Image:** `ghcr.io/midpras/goldenmatch:latest` (or the `sha-<commit>` tag from Actions for a pinned deployment).
 - **Exposed port:** `5050`.
 - **Environment:** set `GOLDENMATCH_WEB_TOKEN` to a long, random secret in Coolify. The app refuses public startup without it. The browser asks for this token at sign-in; it is held in memory only and must be re-entered after a page reload.
-- **Persistent storage:** mount a writable Coolify volume or directory at `/data`. The workbench reads the project at `/data`; add your `data.csv` and optional `goldenmatch.yml` there. Labels, edited rules, runs, and per-user settings are saved under this directory. The health endpoint stays unready until `/data/data.csv` exists.
+- **Persistent storage:** mount a writable Coolify volume or directory at `/data`. Upload CSV or Excel `.xlsx` from **Data**, or retain an existing `/data/data.csv` and optional `goldenmatch.yml` as the legacy project. Imported snapshots, labels, edited rules, runs, settings, and encrypted connection profiles persist under `/data`. Back up the entire mount.
 - **Registry access:** if the GHCR package is private, add GHCR credentials in Coolify’s **Registries** settings for the deployment server. Public GHCR images need no credentials.
 
 In Coolify, select **+ New → Docker Image**, save the image above, set **Ports Exposes** to `5050`, add the token environment variable and `/data` persistent mount, then deploy and attach a domain. Do not configure Coolify to build the repository on the VPS.
+
+### Upload files and import a remote database
+
+1. Open the HTTPS domain and sign in with `GOLDENMATCH_WEB_TOKEN`.
+2. Open **Data**, choose a UTF-8 CSV or `.xlsx`, select the delimiter or worksheet,
+   and preview the first 20 rows. Give it a name and select **Import as dataset**.
+   Older `.xls` files must be saved as `.xlsx` first. Formula cells need cached
+   values: recalculate and save the workbook in Excel before upload.
+3. Importing creates a new snapshot; it never overwrites another dataset.
+   Choose snapshots with **Active dataset**. Activation reloads the page, so
+   sign in again; the access token is deliberately not stored in the browser.
+   **Match** can select another imported snapshot as its reference.
+4. To enable **Connections**, generate a Fernet key once:
+   `docker run --rm --entrypoint python ghcr.io/midpras/goldenmatch:latest -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+   Save the result as the secret `GOLDENMATCH_CONNECTION_KEY` in Coolify and redeploy.
+   Keep this key stable and back it up separately from `/data`; replacing or losing
+   it makes saved passwords unreadable. Restore the original key or re-enter each password.
+5. In **Connections**, save a PostgreSQL profile using a read-only database account,
+   test it, select a table, preview, and import a named snapshot. Database access is
+   from the VPS, not the browser: allow the VPS in the database firewall. Other
+   database engines and arbitrary SQL are not supported by this menu.
+6. Prefer TLS **verify-full**. Supply the database provider's trusted CA as
+   `/data/.postgresql/root.crt` when required by libpq. **require** encrypts without
+   guaranteeing hostname verification; **disable** is only appropriate on a trusted
+   private test network. Cloudflare HTTPS protects browser traffic, not the separate
+   VPS-to-database connection.
+
+Loopback/link-local targets are blocked by default. To permit a specific private
+database or Docker service, set `GOLDENMATCH_WEB_ALLOWED_DB_HOSTS` to its exact
+hostname/IP (comma-separated for multiple hosts). Alternatively,
+`GOLDENMATCH_WEB_ALLOW_PRIVATE_DB_HOSTS=true` permits private-network addresses
+but still blocks loopback/link-local addresses unless explicitly allowlisted.
+Only approve database targets you trust.
+
+| Import setting | Default |
+|---|---|
+| `GOLDENMATCH_WEB_UPLOAD_MAX_BYTES` | 26,214,400 bytes (25 MiB) |
+| `GOLDENMATCH_WEB_IMPORT_MAX_ROWS` | 100,000 rows |
+| `GOLDENMATCH_WEB_IMPORT_MAX_COLUMNS` | 256 columns |
+| `GOLDENMATCH_WEB_IMPORT_MAX_CELL_CHARS` | 100,000 characters |
+| `GOLDENMATCH_WEB_IMPORT_MAX_OUTPUT_BYTES` | 104,857,600 bytes (100 MiB) |
+| `GOLDENMATCH_WEB_XLSX_MAX_EXPANDED_BYTES` | 104,857,600 bytes (100 MiB) |
+| `GOLDENMATCH_WEB_PREVIEW_MAX_BYTES` | 1,048,576 bytes (1 MiB) |
+
+These server-side limits can be changed in Coolify; the upload page displays the
+standard 25 MiB/100,000-row defaults. Imports stream to disk; only one import runs
+at a time, with HTTP 429 if processing capacity is busy. Oversized imports fail
+instead of silently truncating data. Matching itself retains the engine's existing
+memory requirements; a successful import is not a guarantee that a large matching
+job fits your VPS.
+
+Each snapshot has independent rules, saved runs, labels, and Learning Memory.
+Sampled-preview labels remain preview-local and do not train full-dataset memory.
+Existing legacy files stay in place; replacing legacy `data.csv` by hand does
+not create a new dataset version, so use the import UI when changing data.
+CSV/Excel and PostgreSQL imports do not call OpenAI or require an LLM API key.
+The separate PDF/image **Ingest** feature still needs document dependencies and
+an OpenAI key; it is not enabled by this minimal image.
+
 
 **Airflow.** 13 drop-in DAGs at [`examples/airflow/`](examples/airflow/README.md) (TaskFlow API, Airflow 2.7+ / 3.x; idempotent, marker-protected), grouped by lifecycle stage:
 

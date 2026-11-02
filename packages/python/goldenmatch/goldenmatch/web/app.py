@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from goldenmatch.web.connections import router as connections_router
+from goldenmatch.web.datasets import router as datasets_router
 from goldenmatch.web.state import AppState
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -48,9 +53,56 @@ class SPAStaticFiles(StaticFiles):
             raise
 
 
+class _UploadBodyLimitMiddleware:
+    """Bound multipart ingress without consuming or replaying its body."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+        self.slots = threading.BoundedSemaphore(2)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"] != "/api/v1/datasets/uploads":
+            await self.app(scope, receive, send)
+            return
+        from goldenmatch.web.datasets import MAX_UPLOAD_BYTES
+
+        request_limit = MAX_UPLOAD_BYTES + 1024 * 1024
+        declared = Headers(scope=scope).get("content-length")
+        if declared:
+            try:
+                length = int(declared)
+                if length < 0:
+                    raise ValueError
+            except ValueError:
+                await JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)(scope, receive, send)
+                return
+            if length > request_limit:
+                await JSONResponse({"detail": f"Upload request exceeds {request_limit} byte limit"}, status_code=413)(scope, receive, send)
+                return
+        if not self.slots.acquire(blocking=False):
+            await JSONResponse({"detail": "Upload capacity is busy; retry shortly"}, status_code=429)(scope, receive, send)
+            return
+        size = 0
+
+        async def limited_receive():
+            nonlocal size
+            message = await receive()
+            if message["type"] == "http.request":
+                size += len(message.get("body", b""))
+                if size > request_limit:
+                    raise StarletteHTTPException(413, detail=f"Upload request exceeds {request_limit} byte limit")
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        finally:
+            self.slots.release()
+
+
 def create_app(state: AppState) -> FastAPI:
     app = FastAPI(title="goldenmatch-ui", version="1")
     app.state.app_state = state
+    app.add_middleware(_UploadBodyLimitMiddleware)
 
     # Optional bearer auth: enforced on /api/v1/* (except healthz) only when
     # GOLDENMATCH_WEB_TOKEN is set. Static assets stay public so the page loads.
@@ -66,13 +118,20 @@ def create_app(state: AppState) -> FastAPI:
 
     @app.get("/api/v1/healthz")
     def healthz() -> JSONResponse:
-        """Liveness + readiness: confirms the project root and data.csv exist."""
+        """Report readiness once a legacy source or imported snapshot exists."""
         root = state.project_root
+        snapshots = root / ".goldenmatch" / "datasets"
+        imported = snapshots.is_dir() and any(
+            not path.name.startswith(".") and (path / "manifest.json").is_file()
+            and (path / "data.csv").is_file()
+            for path in snapshots.iterdir()
+        )
         checks = {
             "project_root": root.is_dir(),
-            "data_csv": (root / "data.csv").exists(),
+            "data_csv": (root / "data.csv").is_file(),
+            "imported_dataset": imported,
         }
-        ok = all(checks.values())
+        ok = checks["project_root"] and (checks["data_csv"] or imported)
         return JSONResponse(
             {"status": "ok" if ok else "degraded", "checks": checks},
             status_code=200 if ok else 503,
@@ -120,6 +179,8 @@ def create_app(state: AppState) -> FastAPI:
     app.include_router(identity_router.router)
     app.include_router(documents_router.router)
     app.include_router(suggest_router.router)
+    app.include_router(datasets_router)
+    app.include_router(connections_router)
 
     if STATIC_DIR.exists() and any(STATIC_DIR.iterdir()):
         app.mount("/", SPAStaticFiles(directory=str(STATIC_DIR), html=True), name="static")

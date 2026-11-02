@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from goldenmatch.core.compare_clusters import compare_clusters
 from goldenmatch.web import runs as runs_mod
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1/compare")
 
@@ -49,7 +50,7 @@ def _clusters_dict(ref) -> dict[int, dict]:
 
 @router.post("")
 def compare(payload: CompareRequest, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     ref_a = _find_run(state, payload.run_a)
     ref_b = _find_run(state, payload.run_b)
 

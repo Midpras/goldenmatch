@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from goldenmatch.config.schemas import RulesPayload
 from goldenmatch.core.sensitivity import SweepParam, run_sensitivity
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1")
 
@@ -102,7 +103,7 @@ def _execute_sweep(
 
 @router.post("/sensitivity")
 async def sensitivity(payload: SensitivityRequest, request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     rules = payload.rules or state.rules
     if rules is None:
         raise HTTPException(

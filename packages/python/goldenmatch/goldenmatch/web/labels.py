@@ -1,19 +1,13 @@
-"""Web-UI label store.
+"""Web-UI label persistence.
 
-Append-only JSONL at ``project_root/labels.jsonl``, last-write-wins on read
-(deduped per canonical (row_id_a, row_id_b) pair).
+Full-data labels append to ``project_root/labels.jsonl`` and are deduplicated
+by canonical pair on read. Preview labels live in each preview registry
+entry's temporary directory, preventing sampled row IDs from colliding with
+full-dataset decisions.
 
-This store is intentionally separate from:
-
-- ``goldenmatch label`` CLI output — that writes a CSV consumed by
-  ``goldenmatch evaluate`` / ``load_ground_truth_csv``. Different shape
-  (CSV with ``label`` as 0/1), different consumer.
-- ``MemoryStore`` corrections (Learning Memory v1.6.0) — those flow through
-  ``add_correction()`` to drive ``apply_corrections`` and threshold learning.
-
-If/when web labels need to feed evaluation or Learning Memory, an explicit
-export step (JSONL → CSV, or a router-side ``add_correction`` call) is the
-right path. Both are deferred for v1 — see the spec's Deferred section.
+This JSONL shape remains separate from ``goldenmatch label`` CLI CSV output.
+Labels tied to a saved full-data run are mirrored to dataset-scoped Learning
+Memory by the labels router; preview decisions are never mirrored.
 """
 from __future__ import annotations
 

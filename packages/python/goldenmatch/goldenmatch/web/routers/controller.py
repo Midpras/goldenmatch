@@ -13,13 +13,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from goldenmatch.web.controller_telemetry import serialize_telemetry
+from goldenmatch.web.datasets import request_dataset_state
 
 router = APIRouter(prefix="/api/v1")
 
 
 @router.get("/controller/telemetry")
 def telemetry(request: Request) -> dict:
-    state = request.app.state.app_state
+    state = request_dataset_state(request)
     return serialize_telemetry(
         profile=state.last_controller_profile,
         history=state.last_controller_history,

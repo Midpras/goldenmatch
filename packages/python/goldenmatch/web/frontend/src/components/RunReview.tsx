@@ -38,6 +38,7 @@ export function RunReview({ runName }: Props) {
         row_id_a: vars.pair.row_id_a,
         row_id_b: vars.pair.row_id_b,
         label: vars.decision,
+        run_name: runName,
       }),
     onSuccess: () => {
       // Backend filters labeled pairs out by default — refetch advances.

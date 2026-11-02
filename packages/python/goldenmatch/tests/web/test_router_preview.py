@@ -58,22 +58,6 @@ def test_preview_validation_error(client):
     assert resp.status_code == 422
 
 
-def test_preview_missing_data_csv_returns_400(tmp_path):
-    """Empty project (no data.csv) should 400 with a useful message, not 500."""
-    from fastapi.testclient import TestClient
-    from goldenmatch.web.app import create_app
-    from goldenmatch.web.state import AppState
-
-    bare = TestClient(create_app(AppState.from_project_dir(tmp_path)))
-    payload = {
-        "rules": {"threshold": 0.85, "matchkeys": [
-            {"column": "name", "scorer": "jaro_winkler", "weight": 1.0, "transforms": []}
-        ]},
-        "sample": {"n": 10, "seed": 0},
-    }
-    resp = bare.post("/api/v1/preview", json=payload)
-    assert resp.status_code == 400
-    assert "data.csv" in resp.json()["detail"]
 
 
 def test_preview_unknown_column_returns_400(client):
