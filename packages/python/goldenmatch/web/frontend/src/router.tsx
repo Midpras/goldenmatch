@@ -5,6 +5,7 @@ import {
   Link,
   Outlet,
 } from "@tanstack/react-router";
+import { clearAuthToken, hasAuthToken } from "./lib/api";
 import { Compare } from "./routes/Compare";
 import { Documents } from "./routes/Documents";
 import { Home } from "./routes/Home";
@@ -42,6 +43,15 @@ const rootRoute = createRootRoute({
           <NavLink to="/identities">Identities</NavLink>
           <NavLink to="/memory">Memory</NavLink>
           <NavLink to="/settings">Settings</NavLink>
+          {hasAuthToken() && (
+            <button
+              type="button"
+              onClick={clearAuthToken}
+              className="ml-2 border-l border-ink-200 px-3 py-2 uppercase tracking-eyebrow text-ink-500 hover:text-gold-600 transition-colors"
+            >
+              Sign out
+            </button>
+          )}
         </nav>
       </header>
 

@@ -400,6 +400,16 @@ docker run -p 8200:8200 ghcr.io/benseverndev-oss/goldenmatch-mcp:latest   # per-
 docker run -e POSTGRES_PASSWORD=secret ghcr.io/benseverndev-oss/goldenmatch-extensions:latest   # Postgres + extension
 ```
 
+**GoldenMatch WebUI (Coolify).** This fork builds the browser workbench in GitHub Actions and publishes a prebuilt image; Coolify only pulls and runs it. Use a **Docker Image** application with:
+
+- **Image:** `ghcr.io/midpras/goldenmatch:latest` (or the `sha-<commit>` tag from Actions for a pinned deployment).
+- **Exposed port:** `5050`.
+- **Environment:** set `GOLDENMATCH_WEB_TOKEN` to a long, random secret in Coolify. The app refuses public startup without it. The browser asks for this token at sign-in; it is held in memory only and must be re-entered after a page reload.
+- **Persistent storage:** mount a writable Coolify volume or directory at `/data`. The workbench reads the project at `/data`; add your `data.csv` and optional `goldenmatch.yml` there. Labels, edited rules, runs, and per-user settings are saved under this directory. The health endpoint stays unready until `/data/data.csv` exists.
+- **Registry access:** if the GHCR package is private, add GHCR credentials in Coolify’s **Registries** settings for the deployment server. Public GHCR images need no credentials.
+
+In Coolify, select **+ New → Docker Image**, save the image above, set **Ports Exposes** to `5050`, add the token environment variable and `/data` persistent mount, then deploy and attach a domain. Do not configure Coolify to build the repository on the VPS.
+
 **Airflow.** 13 drop-in DAGs at [`examples/airflow/`](examples/airflow/README.md) (TaskFlow API, Airflow 2.7+ / 3.x; idempotent, marker-protected), grouped by lifecycle stage:
 
 | Group | DAGs |
