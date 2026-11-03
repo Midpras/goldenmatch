@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { api } from "../lib/api";
 import type { QualityFinding, QualityResponse } from "../lib/api";
 import type { Project } from "../lib/types";
+import { isNoDatasetSelected } from "../lib/projectErrors";
 
 export function Home() {
   const qc = useQueryClient();
@@ -43,12 +44,31 @@ export function Home() {
 
   if (isLoading)
     return <div className="p-12 text-sm text-ink-500">Loading project…</div>;
-  if (error)
+  if (error) {
+    const datasetMissing = isNoDatasetSelected(error);
     return (
-      <div className="p-12 text-sm text-red-700">
-        Failed to load project: {String(error)}. <Link to="/data" className="underline text-gold-600">Import or choose a dataset</Link>.
+      <div className="p-12 text-sm text-red-700" role="alert">
+        {datasetMissing ? (
+          <>
+            <h2 className="font-semibold">No dataset selected</h2>
+            <p className="mt-1 text-ink-700">
+              Import a CSV or Excel file, or choose an existing dataset in Data. Then come back here.
+            </p>
+            <Link to="/data" className="mt-3 inline-block underline text-gold-600">
+              Open Data
+            </Link>
+          </>
+        ) : (
+          <>
+            <p>Could not load the project: {String(error)}</p>
+            <Link to="/data" className="underline text-gold-600">
+              Open Data
+            </Link>
+          </>
+        )}
       </div>
     );
+  }
   if (!data) return null;
 
   const ruleSummary = data.rules.matchkeys.length
@@ -184,6 +204,7 @@ export function Home() {
     </div>
   );
 }
+
 
 /** Surfaces the four reproducible benchmark numbers + a pointer to the
  *  reproducibility doc (PR #152) and the scale envelope guide (PR #149). The

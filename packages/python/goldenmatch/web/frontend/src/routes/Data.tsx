@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, setActiveDatasetId } from "../lib/api";
 import type { DataPreview, DatasetSummary, UploadStaged } from "../lib/api";
@@ -19,6 +19,8 @@ export function Data() {
   const [sheet, setSheet] = useState("");
   const [delimiter, setDelimiter] = useState(",");
   const [preview, setPreview] = useState<DataPreview | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const uploadMutation = useMutation({
@@ -58,6 +60,7 @@ export function Data() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    setFileName(file.name);
     setUpload(null);
     setPreview(null);
     if (/\.xls$/i.test(file.name)) {
@@ -74,51 +77,81 @@ export function Data() {
   }
 
   return (
-    <div className="px-8 py-10 max-w-6xl mx-auto space-y-8">
+    <div className="px-4 py-8 sm:px-8 sm:py-10 max-w-6xl mx-auto space-y-8">
       <header>
-        <p className="eyebrow mb-2">data</p>
         <h1 className="display text-3xl text-ink-900">Datasets</h1>
         <p className="mt-2 max-w-3xl text-sm text-ink-500">Import CSV or Excel .xlsx snapshots. Imports do not replace existing datasets; activate a snapshot to work with it.</p>
       </header>
 
-      <section className="card p-5 space-y-4">
-        <h2 className="eyebrow">Upload data</h2>
-        <label className="block">
-          <span className="eyebrow block mb-2">CSV or .xlsx file</span>
-          <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleFile} disabled={uploadMutation.isPending || previewMutation.isPending || importMutation.isPending} />
-        </label>
-        <p className="text-xs text-ink-500">Maximum upload: 25 MiB; maximum dataset: 100,000 rows. Excel workbooks are read without running formulas. Legacy .xls files are not accepted.</p>
+      <section className="card p-4 sm:p-5 space-y-4">
+        <h2 className="eyebrow text-xs">Upload data</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            ref={fileInputRef}
+            id="dataset-file"
+            type="file"
+            hidden
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={handleFile}
+            disabled={uploadMutation.isPending || previewMutation.isPending || importMutation.isPending}
+          />
+          <button
+            type="button"
+            className="btn btn-primary min-h-11"
+            aria-controls="dataset-file"
+            aria-describedby="dataset-file-guidance"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending || previewMutation.isPending || importMutation.isPending}
+          >
+            {fileName ? "Choose a different file" : "Browse files"}
+          </button>
+          <span aria-live="polite" className="min-w-0 max-w-full break-all text-sm text-ink-700">
+            {fileName ?? "No file selected"}
+          </span>
+        </div>
+        <p id="dataset-file-guidance" className="text-xs text-ink-500">
+          CSV or Excel workbook (.xlsx), up to 25 MiB and 100,000 rows. Legacy .xls files are not supported. Excel formulas are not recalculated.
+        </p>
         {uploadMutation.isPending && <p role="status" className="text-sm text-ink-500">Staging upload…</p>}
         {upload && <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
           {upload.sheets.length > 0 && <label className="block">
-            <span className="eyebrow block mb-1">Worksheet</span>
+            <span className="eyebrow text-xs block mb-1">Worksheet</span>
             <select className="w-full" value={sheet} disabled={previewMutation.isPending || importMutation.isPending} onChange={(e) => { setSheet(e.target.value); setPreview(null); }}>
               {upload.sheets.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>}
           <label className="block">
-            <span className="eyebrow block mb-1">CSV delimiter</span>
+            <span className="eyebrow text-xs block mb-1">CSV delimiter</span>
             <select className="w-full" value={delimiter} disabled={previewMutation.isPending || importMutation.isPending} onChange={(e) => { setDelimiter(e.target.value); setPreview(null); }}>
               {DELIMITERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </label>
           <label className="block">
-            <span className="eyebrow block mb-1">Dataset name</span>
+            <span className="eyebrow text-xs block mb-1">Dataset name</span>
             <input className="w-full" value={name} disabled={importMutation.isPending} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Customer records" />
           </label>
         </div>}
         {upload && <div className="flex flex-wrap gap-3">
-          <button className="btn" onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending || importMutation.isPending}>{previewMutation.isPending ? "Loading preview…" : "Preview first 20 rows"}</button>
-          <button className="btn btn-primary" onClick={() => importMutation.mutate()} disabled={!preview || !name.trim() || previewMutation.isPending || importMutation.isPending}>{importMutation.isPending ? "Importing…" : "Import as dataset"}</button>
+          <button className="btn min-h-11" onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending || importMutation.isPending}>{previewMutation.isPending ? "Loading preview…" : "Preview first 20 rows"}</button>
+          <button className="btn btn-primary min-h-11" onClick={() => importMutation.mutate()} disabled={!preview || !name.trim() || previewMutation.isPending || importMutation.isPending}>{importMutation.isPending ? "Importing…" : "Import as dataset"}</button>
+          {!previewMutation.isPending && !importMutation.isPending && (
+            <p className="text-sm text-ink-500" role="status" aria-live="polite">
+              {!preview
+                ? "Preview the file to enable import."
+                : !name.trim()
+                  ? "Enter a dataset name to enable import."
+                  : "Preview ready. You can import this dataset."}
+            </p>
+          )}
         </div>}
         {message && <p role="alert" className="text-sm text-red-700 break-words">{message}</p>}
         {preview && <Preview preview={preview} />}
       </section>
 
-      <section className="card p-5">
+      <section className="card p-4 sm:p-5">
         <div className="flex items-baseline justify-between gap-4 mb-4">
-          <h2 className="eyebrow">Available snapshots</h2>
-          <button className="text-xs text-gold-600 hover:text-gold-700" onClick={() => void datasets.refetch()}>Refresh</button>
+          <h2 className="eyebrow text-xs">Available snapshots</h2>
+          <button className="btn min-h-11" onClick={() => void datasets.refetch()}>Refresh</button>
         </div>
         {datasets.isLoading && <p className="text-sm text-ink-500">Loading datasets…</p>}
         {datasets.error && <p role="alert" className="text-sm text-red-700">{datasets.error.message}</p>}
@@ -129,7 +162,7 @@ export function Data() {
               <p className="font-medium text-ink-900">{dataset.name}</p>
               <p className="text-xs text-ink-500">{dataset.id} · {dataset.source} · {dataset.row_count ?? "unknown"} rows · {dataset.columns.join(", ")}</p>
             </div>
-            <button className="btn btn-primary shrink-0" disabled={pendingMutations > 0} onClick={() => activateDataset(dataset)}>Use dataset</button>
+            <button className="btn btn-primary min-h-11 shrink-0" disabled={pendingMutations > 0} onClick={() => activateDataset(dataset)}>Use dataset</button>
           </div>)}
         </div>
       </section>
