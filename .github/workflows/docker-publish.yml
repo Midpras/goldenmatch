@@ -88,7 +88,8 @@ jobs:
 
           connection_key=$(docker run --rm --entrypoint python "$image" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
           docker network create goldenmatch-smoke
-          database=$(docker run -d --network goldenmatch-smoke --name goldenmatch-smoke-db -e POSTGRES_PASSWORD=workflow-admin-only postgres:17-alpine)
+          database_password=workflow-admin-only
+          database=$(docker run -d --network goldenmatch-smoke --name goldenmatch-smoke-db -e "POSTGRES_PASSWORD=$database_password" postgres:17-alpine)
           container=
           cleanup() {
             [[ -z "$container" ]] || docker rm -f "$container" >/dev/null 2>&1 || true
@@ -96,11 +97,20 @@ jobs:
             docker network rm goldenmatch-smoke >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
+          database_ready=false
           for attempt in {1..30}; do
-            docker exec "$database" pg_isready -U postgres && break
+            if docker exec "$database" pg_isready --quiet -h 127.0.0.1 -U postgres; then
+              database_ready=true
+              break
+            fi
             sleep 1
           done
-          docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          if [[ "$database_ready" != true ]]; then
+            docker logs "$database" >&2
+            echo 'PostgreSQL did not become ready on TCP within 30 seconds' >&2
+            exit 1
+          fi
+          docker exec -e "PGPASSWORD=$database_password" -i "$database" psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
           CREATE TABLE web_import_smoke (id integer, name text);
           INSERT INTO web_import_smoke VALUES (1, 'Ada'), (2, 'Grace');
           CREATE USER web_reader WITH PASSWORD 'workflow-reader-only';
